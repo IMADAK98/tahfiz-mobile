@@ -109,7 +109,8 @@ class HomeRepository {
     }
   }
 
-  /// Extract term id from a ḥalaqa payload (`termId` / `term_id` / nested `term`).
+  /// Extract term id from a ḥalaqa payload.
+  /// Nest GetHalqaDto uses `assignedToTermId` (not always `termId`).
   Future<String?> getHalqaTermId(String halaqaId) async {
     try {
       final res = await api.getHalqaById(halaqaId);
@@ -419,8 +420,14 @@ class HomeRepository {
     }
   }
 
+  /// Nest GetHalqaDto: `assignedToTermId` is the ḥalaqa's term; `termId` is a
+  /// fallback. Missing this field makes `resolveTermDayId` fail and attendance
+  /// save show «تعذر تحديد الفصل الدراسي للحلقة».
   static String? _extractTermId(Map<String, dynamic> map) {
-    final direct = map['termId'] ?? map['term_id'];
+    final direct = map['assignedToTermId'] ??
+        map['assigned_to_term_id'] ??
+        map['termId'] ??
+        map['term_id'];
     if (direct != null) {
       final s = direct.toString().trim();
       if (s.isNotEmpty && s != 'null') return s;
@@ -428,7 +435,11 @@ class HomeRepository {
     final term = map['term'];
     if (term is Map) {
       final t = Map<String, dynamic>.from(term);
-      final id = t['id'] ?? t['termId'] ?? t['term_id'];
+      final id = t['id'] ??
+          t['termId'] ??
+          t['term_id'] ??
+          t['assignedToTermId'] ??
+          t['assigned_to_term_id'];
       if (id != null) {
         final s = id.toString().trim();
         if (s.isNotEmpty && s != 'null') return s;
@@ -439,6 +450,9 @@ class HomeRepository {
     }
     return null;
   }
+
+  /// Test seam for [_extractTermId] (GetHalqaDto `assignedToTermId`).
+  static String? extractTermId(Map<String, dynamic> map) => _extractTermId(map);
 
   static Set<String> _extractHolidayDatesFromHalqa(Map<String, dynamic> map) {
     final top = map['holidayDates'] ?? map['holiday_dates'];

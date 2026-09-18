@@ -28,15 +28,18 @@ class HalaqaStudent {
     final nestedUser = _asMap(json['user']);
     final nestedStudent = _asMap(json['student']);
 
+    // Nest attendance/progress expect User.id. Roster `id` is often the
+    // enrollment / ḥalaqa-student row, which bulk `students[].userId` rejects.
     final id = _firstNonEmpty([
-      json['id'],
-      json['studentId'],
-      json['student_id'],
       json['userId'],
       json['user_id'],
-      nestedStudent?['id'],
-      nestedStudent?['studentId'],
       nestedUser?['id'],
+      json['studentId'],
+      json['student_id'],
+      nestedStudent?['studentId'],
+      nestedStudent?['userId'],
+      nestedStudent?['id'],
+      json['id'],
     ]) ?? '';
 
     final name = _firstNonEmpty([
