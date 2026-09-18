@@ -5,28 +5,28 @@ Package: `thafiz_teacher` · Android id: `com.thafiz.thafiz_teacher` · API: `ht
 
 ## Map for web FE / BE developers
 
-| Flutter | Web approx |
-|---------|------------|
-| Widget / `StatelessWidget` | React/Vue component |
-| `go_router` routes | Client-side router (`/login`, `/halaqa/:id`, …) |
-| `dio` + `ApiPaths` | `fetch` / Axios / HttpClient + path constants |
-| `flutter_secure_storage` | `localStorage` / secure cookie jar for tokens |
-| Riverpod `Provider` | DI + lightweight app state (Context / Zustand / Pinia) |
-| `flutter_dotenv` `.env` | Vite/Next `VITE_*` / `process.env` |
-| Feature folders under `lib/features/` | Domain modules (`auth/`, `halaqa/`, …) |
+| Flutter                               | Web approx                                             |
+| ------------------------------------- | ------------------------------------------------------ |
+| Widget / `StatelessWidget`            | React/Vue component                                    |
+| `go_router` routes                    | Client-side router (`/login`, `/halaqa/:id`, …)        |
+| `dio` + `ApiPaths`                    | `fetch` / Axios / HttpClient + path constants          |
+| `flutter_secure_storage`              | `localStorage` / secure cookie jar for tokens          |
+| Riverpod `Provider`                   | DI + lightweight app state (Context / Zustand / Pinia) |
+| `flutter_dotenv` `.env`               | Vite/Next `VITE_*` / `process.env`                     |
+| Feature folders under `lib/features/` | Domain modules (`auth/`, `halaqa/`, …)                 |
 
 ## Routes
 
-| Path | Screen |
-|------|--------|
-| `/login` | Login |
-| `/register` | Teacher signup stub |
-| `/recover-account` | Recover + OTP (was `/revoverAccount`) |
-| `/` | Bottom nav (home + profile) |
-| `/halaqa/:id` | Ḥalaqa students list |
-| `/student/:id` | Student hub |
-| `/student/:id/attendance` | 4 chips: حاضر/غائب/متأخر/معذور |
-| `/student/:id/progress` | Plan read-only; إلى سورة/آية; MURAJAA list |
+| Path                      | Screen                                     |
+| ------------------------- | ------------------------------------------ |
+| `/login`                  | Login                                      |
+| `/register`               | Teacher signup stub                        |
+| `/recover-account`        | Recover + OTP (was `/revoverAccount`)      |
+| `/`                       | Bottom nav (home + profile)                |
+| `/halaqa/:id`             | Ḥalaqa students list                       |
+| `/student/:id`            | Student hub                                |
+| `/student/:id/attendance` | 4 chips: حاضر/غائب/متأخر/معذور             |
+| `/student/:id/progress`   | Plan read-only; إلى سورة/آية; MURAJAA list |
 
 ## Product locks (progress UI)
 
