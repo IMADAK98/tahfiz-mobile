@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -10,11 +8,18 @@ import '../../home/data/home_repository.dart';
 import '../data/attendance_status.dart';
 import '../data/dto/halaqa_student.dart';
 
-/// Wired ḥalaqa detail: Nest roster + locked mock UI (halaqa-detail.html).
+enum _DetailTab { attendance, progress, overview }
+
+/// Ḥalaqa detail v2: attendance / progress / overview on `/halaqa/:id`.
 class HalaqaDetailPage extends ConsumerStatefulWidget {
-  const HalaqaDetailPage({super.key, required this.halaqaId});
+  const HalaqaDetailPage({
+    super.key,
+    required this.halaqaId,
+    this.startInEdit = false,
+  });
 
   final String halaqaId;
+  final bool startInEdit;
 
   @override
   ConsumerState<HalaqaDetailPage> createState() => _HalaqaDetailPageState();
@@ -22,11 +27,15 @@ class HalaqaDetailPage extends ConsumerStatefulWidget {
 
 class _HalaqaDetailPageState extends ConsumerState<HalaqaDetailPage> {
   bool _loading = true;
+  bool _saving = false;
+  bool _editing = false;
   String? _error;
   List<HalaqaStudent> _students = const [];
   String _title = 'المعلم';
   late String _date; // YYYY-MM-DD
   Set<String> _holidays = const {};
+  _DetailTab _tab = _DetailTab.attendance;
+  NestAttendanceStatus? _filter;
 
   /// Optimistic chip status keyed by Nest User.id.
   final Map<String, NestAttendanceStatus> _uiStatus = {};
@@ -34,29 +43,15 @@ class _HalaqaDetailPageState extends ConsumerState<HalaqaDetailPage> {
   /// Last known Nest raw status (NOT_MARKED / PRESENT / …) for POST vs PUT.
   final Map<String, String?> _serverStatus = {};
 
-  // ponytail: 450ms debounce per student; ceiling = rapid taps only persist the
-  // last status. Flush on date change / back so a pending tap is not dropped.
-  final Map<String, Timer> _saveTimers = {};
-  static const _saveDebounce = Duration(milliseconds: 450);
+  /// Snapshot of [_uiStatus] when edit started — dirty = current ≠ snapshot.
+  final Map<String, NestAttendanceStatus> _editBaseline = {};
 
   @override
   void initState() {
     super.initState();
+    _editing = widget.startInEdit;
     _date = SchoolCalendar.toYmd(DateTime.now());
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
-  }
-
-  @override
-  void dispose() {
-    _cancelSaveTimers();
-    super.dispose();
-  }
-
-  void _cancelSaveTimers() {
-    for (final t in _saveTimers.values) {
-      t.cancel();
-    }
-    _saveTimers.clear();
   }
 
   void _syncRoster(List<HalaqaStudent> students) {
@@ -71,68 +66,119 @@ class _HalaqaDetailPageState extends ConsumerState<HalaqaDetailPage> {
           (s) => MapEntry(s.id, displayAttendanceStatus(s.attendanceStatus)),
         ),
       );
+    if (_editing) {
+      _editBaseline
+        ..clear()
+        ..addAll(_uiStatus);
+    }
   }
 
   NestAttendanceStatus _statusFor(HalaqaStudent s) =>
       _uiStatus[s.id] ?? displayAttendanceStatus(s.attendanceStatus);
 
-  Future<void> _flushPendingSaves() async {
-    final ids = _saveTimers.keys.toList();
-    _cancelSaveTimers();
-    for (final id in ids) {
-      await _persist(id);
+  List<String> _dirtyIds() {
+    final ids = <String>[];
+    for (final s in _students) {
+      final current = _uiStatus[s.id];
+      final base = _editBaseline[s.id];
+      if (current != null && base != null && current != base) {
+        ids.add(s.id);
+      }
     }
+    return ids;
   }
 
-  Future<void> _popAfterFlush() async {
-    await _flushPendingSaves();
-    if (mounted) context.pop();
+  int _countFor(NestAttendanceStatus status) {
+    var n = 0;
+    for (final s in _students) {
+      if (_statusFor(s) == status) n++;
+    }
+    return n;
   }
 
-  void _onStudentCardTap(HalaqaStudent s) {
-    if (_loading) return;
-    final next = _statusFor(s).next;
-    setState(() => _uiStatus[s.id] = next);
-    _saveTimers[s.id]?.cancel();
-    _saveTimers[s.id] = Timer(_saveDebounce, () {
-      unawaited(_persist(s.id));
+  List<HalaqaStudent> _visibleStudents() {
+    if (_tab != _DetailTab.attendance || _filter == null) {
+      return _students;
+    }
+    return _students.where((s) => _statusFor(s) == _filter).toList();
+  }
+
+  void _enterEdit() {
+    setState(() {
+      _editing = true;
+      _editBaseline
+        ..clear()
+        ..addAll(_uiStatus);
     });
   }
 
-  Future<void> _persist(String studentId) async {
-    final next = _uiStatus[studentId];
-    if (next == null) return;
-    final prev = _serverStatus[studentId];
-    if (parseNestAttendanceStatus(prev) == next) return;
+  Future<void> _openStudentHub(HalaqaStudent s) async {
+    if (_editing && _dirtyIds().isNotEmpty) {
+      final ok = await _saveAttendance();
+      if (!ok) return;
+    }
+    if (!mounted) return;
+    context.push(
+      '/student/${s.id}?date=$_date&halaqaId=${widget.halaqaId}',
+    );
+  }
 
-    final repo = ref.read(homeRepositoryProvider);
-    try {
-      await repo.saveStudentAttendance(
-        halaqaId: widget.halaqaId,
-        date: _date,
-        studentUserId: studentId,
-        status: next.apiValue,
-        previousStatus: prev,
-      );
-      _serverStatus[studentId] = next.apiValue;
-    } catch (e) {
-      if (!mounted) return;
-      if (_uiStatus[studentId] == next) {
+  Future<void> _openProgress(HalaqaStudent s) async {
+    context.push(
+      '/student/${s.id}/progress?date=$_date&halaqaId=${widget.halaqaId}',
+    );
+  }
+
+  Future<bool> _saveAttendance() async {
+    if (_saving) return false;
+    final dirty = _dirtyIds();
+    if (dirty.isEmpty) {
+      if (mounted) {
         setState(() {
-          _uiStatus[studentId] = displayAttendanceStatus(_serverStatus[studentId]);
+          _editing = false;
+          _editBaseline.clear();
         });
       }
+      return true;
+    }
+
+    setState(() => _saving = true);
+    final repo = ref.read(homeRepositoryProvider);
+    try {
+      for (final id in dirty) {
+        final next = _uiStatus[id];
+        if (next == null) continue;
+        final prev = _serverStatus[id];
+        await repo.saveStudentAttendance(
+          halaqaId: widget.halaqaId,
+          date: _date,
+          studentUserId: id,
+          status: next.apiValue,
+          previousStatus: prev,
+        );
+        _serverStatus[id] = next.apiValue;
+      }
+      if (!mounted) return false;
+      setState(() {
+        _editing = false;
+        _saving = false;
+        _editBaseline.clear();
+      });
+      await _reloadRoster();
+      return true;
+    } catch (e) {
+      if (!mounted) return false;
+      setState(() => _saving = false);
       final msg = e is HomeException ? e.message : e.toString();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(msg.isEmpty ? 'تعذر حفظ الحضور' : msg)),
       );
+      return false;
     }
   }
 
   Future<void> _load({bool fromRefresh = false}) async {
-    if (fromRefresh) {
-      await _flushPendingSaves();
-    }
+    if (fromRefresh && (_editing || _saving)) return;
     if (!fromRefresh) {
       setState(() {
         _loading = true;
@@ -154,7 +200,8 @@ class _HalaqaDetailPageState extends ConsumerState<HalaqaDetailPage> {
       _holidays = holidays;
       // On first load / full refresh, snap initial date if today is off-day.
       // Keep user-selected date on pull-to-refresh if already set to a school day.
-      if (!fromRefresh || !SchoolCalendar.isSchoolDay(
+      if (!fromRefresh ||
+          !SchoolCalendar.isSchoolDay(
             SchoolCalendar.parseYmd(_date) ?? DateTime.now(),
             holidays,
           )) {
@@ -189,7 +236,6 @@ class _HalaqaDetailPageState extends ConsumerState<HalaqaDetailPage> {
 
   /// Reload roster only (keep title) after a date change.
   Future<void> _reloadRoster() async {
-    await _flushPendingSaves();
     setState(() {
       _loading = true;
       _error = null;
@@ -220,7 +266,11 @@ class _HalaqaDetailPageState extends ConsumerState<HalaqaDetailPage> {
     if (!SchoolCalendar.isSchoolDay(local, _holidays)) return;
     final ymd = SchoolCalendar.toYmd(local);
     if (ymd == _date) return;
-    setState(() => _date = ymd);
+    setState(() {
+      _date = ymd;
+      _editing = false;
+      _editBaseline.clear();
+    });
     await _reloadRoster();
   }
 
@@ -275,6 +325,7 @@ class _HalaqaDetailPageState extends ConsumerState<HalaqaDetailPage> {
 
   @override
   Widget build(BuildContext context) {
+    final showAttendanceChrome = _tab == _DetailTab.attendance;
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
@@ -287,21 +338,50 @@ class _HalaqaDetailPageState extends ConsumerState<HalaqaDetailPage> {
               children: [
                 _TopBar(
                   title: _title,
-                  onBack: () => unawaited(_popAfterFlush()),
+                  onBack: () => Navigator.of(context).maybePop(),
                 ),
                 const SizedBox(height: 8),
-                _ContextRow(
-                  count: _students.length,
+                _TitleRow(name: _title, count: _students.length),
+                const SizedBox(height: 8),
+                _DateBar(
                   date: _date,
                   onPrev: _goPreviousSchoolDay,
                   onNext: _goNextSchoolDay,
                   onPickDate: _pickDate,
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'أيام العمل أحد–خميس · يتخطى الجمعة/السبت والعطل',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    height: 1.3,
+                  ),
                 ),
                 if (_error != null) ...[
                   const SizedBox(height: 8),
                   _ErrorBanner(
                     message: _error!,
                     onRetry: () => _load(),
+                  ),
+                ],
+                const SizedBox(height: 10),
+                _SegmentedTabs(
+                  tab: _tab,
+                  onChanged: (t) => setState(() => _tab = t),
+                ),
+                if (showAttendanceChrome) ...[
+                  const SizedBox(height: 10),
+                  _AttendanceSummary(
+                    present: _countFor(NestAttendanceStatus.present),
+                    absent: _countFor(NestAttendanceStatus.absent),
+                    late: _countFor(NestAttendanceStatus.late),
+                    leave: _countFor(NestAttendanceStatus.leave),
+                    total: _students.length,
+                    selected: _filter,
+                    onSelected: (s) => setState(() => _filter = s),
                   ),
                 ],
                 const SizedBox(height: 10),
@@ -315,77 +395,145 @@ class _HalaqaDetailPageState extends ConsumerState<HalaqaDetailPage> {
                       : RefreshIndicator(
                           color: AppColors.brand,
                           onRefresh: () => _load(fromRefresh: true),
-                          child: _students.isEmpty
-                              ? ListView(
-                                  physics:
-                                      const AlwaysScrollableScrollPhysics(),
-                                  children: const [
-                                    SizedBox(height: 48),
-                                    Text(
-                                      'لا يوجد طلاب',
-                                      textAlign: TextAlign.center,
-                                      style: TextStyle(
-                                        color: AppColors.textMuted,
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                )
-                              : ListView.separated(
-                                  physics:
-                                      const AlwaysScrollableScrollPhysics(),
-                                  itemCount: _students.length,
-                                  separatorBuilder: (_, _) =>
-                                      const SizedBox(height: 10),
-                                  itemBuilder: (context, i) {
-                                    final s = _students[i];
-                                    return _StudentCard(
-                                      student: s,
-                                      status: _statusFor(s),
-                                      onTap: () => _onStudentCardTap(s),
-                                      onOpenHub: () async {
-                                        await _flushPendingSaves();
-                                        if (!context.mounted) return;
-                                        context.push(
-                                          '/student/${s.id}?date=$_date&halaqaId=${widget.halaqaId}',
-                                        );
-                                      },
-                                    );
-                                  },
-                                ),
+                          child: _tabList(),
                         ),
                 ),
-                const SizedBox(height: 10),
-                SizedBox(
-                  height: 50,
-                  child: FilledButton(
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('قريباً'),
+                if (showAttendanceChrome) ...[
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    height: 50,
+                    child: FilledButton(
+                      onPressed: (_saving || _loading)
+                          ? null
+                          : () async {
+                              if (_editing) {
+                                await _saveAttendance();
+                              } else {
+                                _enterEdit();
+                              }
+                            },
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.brand,
+                        foregroundColor: Colors.white,
+                        disabledBackgroundColor:
+                            AppColors.brand.withValues(alpha: 0.45),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                      );
-                    },
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.brand,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                        textStyle: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 16,
+                        ),
                       ),
-                      textStyle: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 16,
-                      ),
+                      child: Text(_editing ? 'حفظ الحضور' : 'تعديل الحضور'),
                     ),
-                    child: const Text('تعديل'),
                   ),
-                ),
+                ],
               ],
             ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _tabList() {
+    if (_tab == _DetailTab.overview) {
+      return _overviewList();
+    }
+    if (_tab == _DetailTab.progress) {
+      return _progressList();
+    }
+    return _attendanceList();
+  }
+
+  Widget _emptyList(String message) {
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      children: [
+        const SizedBox(height: 48),
+        Text(
+          message,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            color: AppColors.textMuted,
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _attendanceList() {
+    final rows = _visibleStudents();
+    if (_students.isEmpty) return _emptyList('لا يوجد طلاب');
+    if (rows.isEmpty) return _emptyList('لا يوجد طلاب في هذا التصنيف');
+    return ListView.separated(
+      physics: const AlwaysScrollableScrollPhysics(),
+      itemCount: rows.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 10),
+      itemBuilder: (context, i) {
+        final s = rows[i];
+        return _AttendanceCard(
+          student: s,
+          status: _statusFor(s),
+          editing: _editing,
+          onSelect: _editing
+              ? (next) => setState(() => _uiStatus[s.id] = next)
+              : null,
+          onOpenHub: () => _openStudentHub(s),
+        );
+      },
+    );
+  }
+
+  Widget _progressList() {
+    if (_students.isEmpty) return _emptyList('لا يوجد طلاب');
+    return ListView.separated(
+      physics: const AlwaysScrollableScrollPhysics(),
+      itemCount: _students.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 10),
+      itemBuilder: (context, i) {
+        final s = _students[i];
+        return _ProgressCard(
+          student: s,
+          onRecord: () => _openProgress(s),
+        );
+      },
+    );
+  }
+
+  Widget _overviewList() {
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      children: [
+        _OverviewMeta(
+          name: _title,
+          count: _students.length,
+        ),
+        const SizedBox(height: 12),
+        if (_students.isEmpty)
+          const Padding(
+            padding: EdgeInsets.only(top: 36),
+            child: Text(
+              'لا يوجد طلاب',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: AppColors.textMuted,
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          )
+        else
+          ...[
+            for (var i = 0; i < _students.length; i++) ...[
+              if (i > 0) const SizedBox(height: 8),
+              _NameOnlyRow(name: _students[i].name),
+            ],
+          ],
+      ],
     );
   }
 }
@@ -441,16 +589,57 @@ class _TopBar extends StatelessWidget {
   }
 }
 
-class _ContextRow extends StatelessWidget {
-  const _ContextRow({
-    required this.count,
+class _TitleRow extends StatelessWidget {
+  const _TitleRow({required this.name, required this.count});
+
+  final String name;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: AppColors.brand,
+              fontWeight: FontWeight.w800,
+              fontSize: 16,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+          decoration: BoxDecoration(
+            color: AppColors.brandSoft,
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Text(
+            '$count طلاب',
+            style: const TextStyle(
+              color: AppColors.brand,
+              fontWeight: FontWeight.w800,
+              fontSize: 11,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DateBar extends StatelessWidget {
+  const _DateBar({
     required this.date,
     required this.onPrev,
     required this.onNext,
     required this.onPickDate,
   });
 
-  final int count;
   final String date;
   final VoidCallback onPrev;
   final VoidCallback onNext;
@@ -460,67 +649,48 @@ class _ContextRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        const Text(
-          'الطلاب',
-          style: TextStyle(
-            color: AppColors.brand,
-            fontWeight: FontWeight.w800,
-            fontSize: 15,
-          ),
-        ),
-        const SizedBox(width: 8),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-          decoration: BoxDecoration(
-            color: AppColors.brandSoft,
-            borderRadius: BorderRadius.circular(999),
-          ),
-          child: Text(
-            '$count',
-            style: const TextStyle(
-              color: AppColors.brand,
-              fontWeight: FontWeight.w800,
-              fontSize: 11,
-            ),
-          ),
-        ),
-        const Spacer(),
         // Prev (earlier) — first in RTL row sits on the visual right.
         _DateChevron(
           icon: Icons.chevron_right,
           onTap: onPrev,
           tooltip: 'اليوم السابق',
         ),
-        Material(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(999),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(999),
-            onTap: onPickDate,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
+        Expanded(
+          child: Center(
+            child: Material(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(999),
+              child: InkWell(
                 borderRadius: BorderRadius.circular(999),
-                border: Border.all(color: AppColors.borderStrong, width: 1.5),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    date,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
-                      color: AppColors.textPrimary,
-                    ),
+                onTap: onPickDate,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(999),
+                    border:
+                        Border.all(color: AppColors.borderStrong, width: 1.5),
                   ),
-                  const SizedBox(width: 8),
-                  const Icon(
-                    Icons.calendar_today_outlined,
-                    size: 16,
-                    color: AppColors.textMuted,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        date,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      const Icon(
+                        Icons.calendar_today_outlined,
+                        size: 16,
+                        color: AppColors.textMuted,
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
           ),
@@ -567,17 +737,200 @@ class _DateChevron extends StatelessWidget {
   }
 }
 
-class _StudentCard extends StatelessWidget {
-  const _StudentCard({
+class _SegmentedTabs extends StatelessWidget {
+  const _SegmentedTabs({required this.tab, required this.onChanged});
+
+  final _DetailTab tab;
+  final ValueChanged<_DetailTab> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.borderStrong),
+      ),
+      child: Row(
+        children: [
+          _pill(label: 'الحضور', value: _DetailTab.attendance),
+          _pill(label: 'التقدم', value: _DetailTab.progress),
+          _pill(label: 'نظرة عامة', value: _DetailTab.overview),
+        ],
+      ),
+    );
+  }
+
+  Widget _pill({required String label, required _DetailTab value}) {
+    final selected = tab == value;
+    return Expanded(
+      child: Material(
+        color: selected ? AppColors.brandSoft : Colors.transparent,
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: () => onChanged(value),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: selected ? AppColors.brand : Colors.transparent,
+                width: 1.5,
+              ),
+            ),
+            child: Text(
+              label,
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: AppColors.brand,
+                fontWeight: selected ? FontWeight.w800 : FontWeight.w700,
+                fontSize: 13,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AttendanceSummary extends StatelessWidget {
+  const _AttendanceSummary({
+    required this.present,
+    required this.absent,
+    required this.late,
+    required this.leave,
+    required this.total,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final int present;
+  final int absent;
+  final int late;
+  final int leave;
+  final int total;
+  final NestAttendanceStatus? selected;
+  final ValueChanged<NestAttendanceStatus?> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: [
+        _SummaryChip(
+          label: 'حاضر',
+          count: present,
+          selected: selected == NestAttendanceStatus.present,
+          onTap: () => onSelected(
+            selected == NestAttendanceStatus.present
+                ? null
+                : NestAttendanceStatus.present,
+          ),
+        ),
+        _SummaryChip(
+          label: 'غائب',
+          count: absent,
+          selected: selected == NestAttendanceStatus.absent,
+          onTap: () => onSelected(
+            selected == NestAttendanceStatus.absent
+                ? null
+                : NestAttendanceStatus.absent,
+          ),
+        ),
+        _SummaryChip(
+          label: 'متأخر',
+          count: late,
+          selected: selected == NestAttendanceStatus.late,
+          onTap: () => onSelected(
+            selected == NestAttendanceStatus.late
+                ? null
+                : NestAttendanceStatus.late,
+          ),
+        ),
+        _SummaryChip(
+          label: 'معذور',
+          count: leave,
+          selected: selected == NestAttendanceStatus.leave,
+          onTap: () => onSelected(
+            selected == NestAttendanceStatus.leave
+                ? null
+                : NestAttendanceStatus.leave,
+          ),
+        ),
+        _SummaryChip(
+          label: 'الكل',
+          count: total,
+          selected: selected == null,
+          onTap: () => onSelected(null),
+        ),
+      ],
+    );
+  }
+}
+
+class _SummaryChip extends StatelessWidget {
+  const _SummaryChip({
+    required this.label,
+    required this.count,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final int count;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? AppColors.brandSoft : Colors.white,
+      borderRadius: BorderRadius.circular(999),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(999),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: selected ? AppColors.brand : AppColors.borderStrong,
+              width: 1.5,
+            ),
+          ),
+          child: Text(
+            '$label $count',
+            style: TextStyle(
+              color: selected ? AppColors.brand : AppColors.textPrimary,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AttendanceCard extends StatelessWidget {
+  const _AttendanceCard({
     required this.student,
     required this.status,
-    required this.onTap,
+    required this.editing,
     required this.onOpenHub,
+    this.onSelect,
   });
 
   final HalaqaStudent student;
   final NestAttendanceStatus status;
-  final VoidCallback onTap;
+  final bool editing;
+  final ValueChanged<NestAttendanceStatus>? onSelect;
   final VoidCallback onOpenHub;
 
   @override
@@ -585,126 +938,313 @@ class _StudentCard extends StatelessWidget {
     final accent = status.accent;
     final cardBg = status.cardBackground;
     return Material(
+      key: ValueKey('roster-${student.id}'),
       color: cardBg,
       borderRadius: BorderRadius.circular(14),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: onTap,
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: accent.withValues(alpha: 0.28)),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x0A15241C),
-                offset: Offset(0, 1),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: accent.withValues(alpha: 0.28)),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x0A15241C),
+              offset: Offset(0, 1),
+            ),
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(
+                width: 4,
+                margin: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: accent,
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(4),
+                    bottomLeft: Radius.circular(4),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 12, 6, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        student.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 15,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      if (editing)
+                        Wrap(
+                          spacing: 5,
+                          runSpacing: 5,
+                          children: [
+                            for (final s in NestAttendanceStatus.values)
+                              _AttChip(
+                                key: ValueKey(
+                                  'att-chip-${student.id}-${s.apiValue}',
+                                ),
+                                status: s,
+                                selected: status == s,
+                                onTap: () => onSelect?.call(s),
+                              ),
+                          ],
+                        )
+                      else
+                        Align(
+                          alignment: AlignmentDirectional.centerStart,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(color: accent, width: 1.5),
+                            ),
+                            child: Text(
+                              status.labelAr,
+                              style: TextStyle(
+                                color: accent,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              InkWell(
+                onTap: onOpenHub,
+                borderRadius: BorderRadius.circular(8),
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 4),
+                  child: SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: Icon(
+                      Icons.chevron_left,
+                      color: AppColors.textMuted,
+                      size: 22,
+                    ),
+                  ),
+                ),
               ),
             ],
           ),
-          clipBehavior: Clip.antiAlias,
-          child: IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+        ),
+      ),
+    );
+  }
+}
+
+class _AttChip extends StatelessWidget {
+  const _AttChip({
+    super.key,
+    required this.status,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final NestAttendanceStatus status;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = status.accent;
+    return Material(
+      color: selected ? status.cardBackground : Colors.white,
+      borderRadius: BorderRadius.circular(999),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(999),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: selected ? accent : AppColors.borderStrong,
+              width: 1.5,
+            ),
+          ),
+          child: Text(
+            status.labelAr,
+            style: TextStyle(
+              color: selected ? accent : AppColors.textMuted,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              height: 1.2,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ProgressCard extends StatelessWidget {
+  const _ProgressCard({required this.student, required this.onRecord});
+
+  final HalaqaStudent student;
+  final VoidCallback onRecord;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              student.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 15,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 4,
+              runSpacing: 4,
               children: [
-                // Accent on the visual right (start in RTL).
-                Container(
-                  width: 4,
-                  margin: const EdgeInsets.symmetric(vertical: 10),
-                  decoration: BoxDecoration(
-                    color: accent,
-                    borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(4),
-                      bottomLeft: Radius.circular(4),
-                    ),
-                  ),
+                _MetricPill(
+                  kind: _MetricKind.hifz,
+                  label: 'حفظ',
+                  percent: student.hifzPercent,
                 ),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(10, 12, 6, 12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                student.name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 15,
-                                  color: AppColors.textPrimary,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(999),
-                                border: Border.all(color: accent, width: 1.5),
-                              ),
-                              child: Text(
-                                status.labelAr,
-                                style: TextStyle(
-                                  color: accent,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        Wrap(
-                          spacing: 4,
-                          runSpacing: 4,
-                          children: [
-                            _MetricPill(
-                              kind: _MetricKind.hifz,
-                              label: 'حفظ',
-                              percent: student.hifzPercent,
-                            ),
-                            _MetricPill(
-                              kind: _MetricKind.murajaa,
-                              label: 'مراجعة',
-                              percent: student.murajaaPercent,
-                            ),
-                            _MetricPill(
-                              kind: _MetricKind.tathbeet,
-                              label: 'تثبيت',
-                              percent: student.tathbeetPercent,
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
+                _MetricPill(
+                  kind: _MetricKind.murajaa,
+                  label: 'مراجعة',
+                  percent: student.murajaaPercent,
                 ),
-                InkWell(
-                  onTap: onOpenHub,
-                  borderRadius: BorderRadius.circular(8),
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 4),
-                    child: SizedBox(
-                      width: 28,
-                      height: 28,
-                      child: Icon(
-                        Icons.chevron_left,
-                        color: AppColors.textMuted,
-                        size: 22,
-                      ),
-                    ),
-                  ),
+                _MetricPill(
+                  kind: _MetricKind.tathbeet,
+                  label: 'تثبيت',
+                  percent: student.tathbeetPercent,
                 ),
               ],
             ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: TextButton(
+                onPressed: onRecord,
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.brand,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  visualDensity: VisualDensity.compact,
+                ),
+                child: const Text(
+                  'تسجيل تقدّم',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _OverviewMeta extends StatelessWidget {
+  const _OverviewMeta({required this.name, required this.count});
+
+  final String name;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            name,
+            style: const TextStyle(
+              color: AppColors.brand,
+              fontWeight: FontWeight.w800,
+              fontSize: 16,
+            ),
           ),
+          const SizedBox(height: 6),
+          const Text(
+            'أحد–خميس',
+            style: TextStyle(
+              color: AppColors.textMuted,
+              fontWeight: FontWeight.w600,
+              fontSize: 13,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '$count طلاب',
+            style: const TextStyle(
+              color: AppColors.textPrimary,
+              fontWeight: FontWeight.w700,
+              fontSize: 13,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NameOnlyRow extends StatelessWidget {
+  const _NameOnlyRow({required this.name});
+
+  final String name;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Text(
+        name,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          fontWeight: FontWeight.w700,
+          fontSize: 15,
+          color: AppColors.textPrimary,
         ),
       ),
     );

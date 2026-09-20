@@ -71,15 +71,19 @@ void main() {
 
   Future<void> pumpRoster(
     WidgetTester tester,
-    _FakeHomeRepo repo,
-  ) async {
+    _FakeHomeRepo repo, {
+    bool startInEdit = false,
+  }) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           homeRepositoryProvider.overrideWith((ref) => repo),
         ],
-        child: const MaterialApp(
-          home: HalaqaDetailPage(halaqaId: '7'),
+        child: MaterialApp(
+          home: HalaqaDetailPage(
+            halaqaId: '7',
+            startInEdit: startInEdit,
+          ),
         ),
       ),
     );
@@ -87,7 +91,7 @@ void main() {
     await tester.pump();
   }
 
-  testWidgets('unmarked roster shows حاضر then tap cycles and debounced-saves',
+  testWidgets('unmarked roster shows حاضر and tapping the name does not save',
       (tester) async {
     final repo = _FakeHomeRepo([
       const HalaqaStudent(
@@ -98,27 +102,47 @@ void main() {
     ]);
     await pumpRoster(tester, repo);
 
-    expect(find.text('حاضر'), findsOneWidget);
+    expect(find.text('حاضر'), findsWidgets);
 
     await tester.tap(find.text('أحمد'));
     await tester.pump();
-    expect(find.text('غائب'), findsOneWidget);
-    expect(repo.saves, isEmpty);
-
-    await tester.tap(find.text('أحمد'));
-    await tester.pump();
-    expect(find.text('متأخر'), findsOneWidget);
-
     await tester.pump(const Duration(milliseconds: 500));
+    expect(repo.saves, isEmpty);
+    expect(find.text('تعديل الحضور'), findsOneWidget);
+    expect(find.text('حفظ الحضور'), findsNothing);
+  });
+
+  testWidgets(
+      'تعديل الحضور then غائب then حفظ الحضور saves ABSENT from NOT_MARKED',
+      (tester) async {
+    final repo = _FakeHomeRepo([
+      const HalaqaStudent(
+        id: '15',
+        name: 'أحمد',
+        attendanceStatus: 'NOT_MARKED',
+      ),
+    ]);
+    await pumpRoster(tester, repo);
+
+    await tester.tap(find.text('تعديل الحضور'));
     await tester.pump();
+
+    expect(find.text('حفظ الحضور'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('att-chip-15-ABSENT')));
+    await tester.pump();
+
+    await tester.tap(find.text('حفظ الحضور'));
+    await tester.pump();
+    await tester.pump();
+
     expect(repo.saves, hasLength(1));
     expect(repo.saves.single.studentUserId, '15');
-    expect(repo.saves.single.status, 'LATE');
+    expect(repo.saves.single.status, 'ABSENT');
     expect(repo.saves.single.previousStatus, 'NOT_MARKED');
   });
 
-  testWidgets('Nest LATE is shown as متأخر and next tap is معذور',
-      (tester) async {
+  testWidgets('LATE displays متأخر; saving معذور sends LEAVE', (tester) async {
     final repo = _FakeHomeRepo([
       const HalaqaStudent(
         id: '22',
@@ -128,17 +152,46 @@ void main() {
     ]);
     await pumpRoster(tester, repo);
 
-    expect(find.text('متأخر'), findsOneWidget);
-    expect(find.text('حاضر'), findsNothing);
+    expect(find.text('متأخر'), findsWidgets);
 
-    await tester.tap(find.text('سارة'));
+    await tester.tap(find.text('تعديل الحضور'));
     await tester.pump();
-    expect(find.text('معذور'), findsOneWidget);
 
-    await tester.pump(const Duration(milliseconds: 500));
+    await tester.tap(find.byKey(const ValueKey('att-chip-22-LEAVE')));
     await tester.pump();
+
+    await tester.tap(find.text('حفظ الحضور'));
+    await tester.pump();
+    await tester.pump();
+
     expect(repo.saves.single.status, 'LEAVE');
     expect(repo.saves.single.previousStatus, 'LATE');
     expect(repo.saves.single.studentUserId, '22');
+  });
+
+  testWidgets('three tab labels الحضور / التقدم / نظرة عامة are present',
+      (tester) async {
+    final repo = _FakeHomeRepo([
+      const HalaqaStudent(
+        id: '15',
+        name: 'أحمد',
+        attendanceStatus: 'NOT_MARKED',
+      ),
+    ]);
+    await pumpRoster(tester, repo);
+
+    expect(find.text('الحضور'), findsOneWidget);
+    expect(find.text('التقدم'), findsOneWidget);
+    expect(find.text('نظرة عامة'), findsOneWidget);
+
+    await tester.tap(find.text('التقدم'));
+    await tester.pump();
+    expect(find.text('تسجيل تقدّم'), findsOneWidget);
+    expect(find.text('تعديل الحضور'), findsNothing);
+
+    await tester.tap(find.text('نظرة عامة'));
+    await tester.pump();
+    expect(find.text('أحد–خميس'), findsWidgets);
+    expect(find.text('تعديل الحضور'), findsNothing);
   });
 }
