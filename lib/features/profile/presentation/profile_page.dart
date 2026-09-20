@@ -1,13 +1,34 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/brand_mark.dart';
 import '../../../shared/widgets/primary_button.dart';
+import '../../auth/data/auth_repository.dart';
 
 /// Profile / edit-profile stub.
-class ProfilePage extends StatelessWidget {
+class ProfilePage extends ConsumerStatefulWidget {
   const ProfilePage({super.key});
+
+  @override
+  ConsumerState<ProfilePage> createState() => _ProfilePageState();
+}
+
+class _ProfilePageState extends ConsumerState<ProfilePage> {
+  bool _loggingOut = false;
+
+  Future<void> _logout() async {
+    if (_loggingOut) return;
+    setState(() => _loggingOut = true);
+    try {
+      await ref.read(authRepositoryProvider).logout();
+      if (!mounted) return;
+      context.go('/login');
+    } finally {
+      if (mounted) setState(() => _loggingOut = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -57,7 +78,8 @@ class ProfilePage extends StatelessWidget {
               const Spacer(),
               PrimaryButton(
                 label: 'تسجيل الخروج',
-                onPressed: () => context.go('/login'),
+                isLoading: _loggingOut,
+                onPressed: _logout,
               ),
             ],
           ),

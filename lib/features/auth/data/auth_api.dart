@@ -18,8 +18,13 @@ class AuthApi {
     );
   }
 
-  Future<Response<dynamic>> logout() {
-    return _dio.post(ApiPaths.logout);
+  Future<Response<dynamic>> logout({String? refreshToken}) {
+    return _dio.post(
+      ApiPaths.logout,
+      data: refreshToken == null || refreshToken.isEmpty
+          ? null
+          : {'refreshToken': refreshToken},
+    );
   }
 
   Future<Response<dynamic>> refresh({required String refreshToken}) {

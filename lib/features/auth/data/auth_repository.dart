@@ -88,9 +88,10 @@ class AuthRepository {
 
   Future<void> logout() async {
     try {
-      await api.logout();
+      final refreshToken = await storage.readRefreshToken();
+      await api.logout(refreshToken: refreshToken);
     } catch (_) {
-      // Always clear local session.
+      // Always clear local session so the teacher can leave even if the API fails.
     } finally {
       await storage.clearTokens();
     }
