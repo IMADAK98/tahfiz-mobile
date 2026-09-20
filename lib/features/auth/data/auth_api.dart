@@ -55,6 +55,11 @@ class AuthApi {
     return _dio.post(ApiPaths.pendingTeacherRequest, data: body);
   }
 
+  /// Public `GET /center` — no auth header required.
+  Future<Response<dynamic>> fetchCenters() {
+    return _dio.get(ApiPaths.center);
+  }
+
   Future<Response<dynamic>> register(Map<String, dynamic> body) {
     return _dio.post(ApiPaths.register, data: body);
   }

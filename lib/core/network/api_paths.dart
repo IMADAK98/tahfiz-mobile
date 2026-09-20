@@ -10,6 +10,9 @@ abstract final class ApiPaths {
   static const pendingTeacherRequest = 'pending-teacher-request';
   static const register = 'register';
 
+  /// Public centers list for teacher signup (`GET /center`, @Public).
+  static const center = 'center';
+
   // Teacher / home
   static const teacherProfile = 'teacher-profile/';
   static const teacherProfileById = 'teacher-profile/by-teacher-id';
