@@ -4,7 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/network/dio_client.dart';
 import '../../../core/storage/secure_storage_service.dart';
 import 'auth_api.dart';
+import 'dto/center_option.dart';
+import 'dto/create_pending_teacher_request.dart';
 import 'dto/login_response.dart';
+import 'dto/nest_field_errors.dart';
 
 final authApiProvider = Provider<AuthApi>((ref) {
   return AuthApi(ref.watch(dioProvider));
@@ -19,8 +22,11 @@ final authRepositoryProvider = Provider<AuthRepository>((ref) {
 
 /// Thrown when Nest returns an auth/API error with a user-facing message.
 class AuthException implements Exception {
-  AuthException(this.message);
+  AuthException(this.message, {this.fieldErrors = const {}});
   final String message;
+
+  /// Nest `errors[].fieldName` → message (teacher signup validation).
+  final Map<String, String> fieldErrors;
 
   @override
   String toString() => message;
@@ -29,14 +35,8 @@ class AuthException implements Exception {
 String nestErrorMessage(Object error) {
   if (error is AuthException) return error.message;
   if (error is DioException) {
-    final data = error.response?.data;
-    if (data is Map) {
-      final message = data['message'];
-      if (message is String && message.isNotEmpty) return message;
-      if (message is List && message.isNotEmpty) {
-        return message.map((e) => e.toString()).join('\n');
-      }
-    }
+    final parsed = NestFieldErrors.parse(error.response?.data);
+    if (parsed.message.isNotEmpty) return parsed.message;
     if (error.message != null && error.message!.isNotEmpty) {
       return error.message!;
     }
@@ -82,7 +82,8 @@ class AuthRepository {
     } on AuthException {
       rethrow;
     } on DioException catch (e) {
-      throw AuthException(nestErrorMessage(e));
+      final parsed = NestFieldErrors.parse(e.response?.data);
+      throw AuthException(parsed.message, fieldErrors: parsed.byField);
     }
   }
 
@@ -100,7 +101,8 @@ class AuthRepository {
     try {
       await api.requestPasswordReset(email: email);
     } on DioException catch (e) {
-      throw AuthException(nestErrorMessage(e));
+      final parsed = NestFieldErrors.parse(e.response?.data);
+      throw AuthException(parsed.message, fieldErrors: parsed.byField);
     }
   }
 
@@ -116,7 +118,34 @@ class AuthRepository {
         newPassword: newPassword,
       );
     } on DioException catch (e) {
-      throw AuthException(nestErrorMessage(e));
+      final parsed = NestFieldErrors.parse(e.response?.data);
+      throw AuthException(parsed.message, fieldErrors: parsed.byField);
+    }
+  }
+
+  Future<List<CenterOption>> fetchCenters() async {
+    try {
+      final res = await api.fetchCenters();
+      return parseCentersResponse(res.data);
+    } on DioException catch (e) {
+      final parsed = NestFieldErrors.parse(
+        e.response?.data,
+        fallback: 'تعذر تحميل المراكز',
+      );
+      throw AuthException(parsed.message, fieldErrors: parsed.byField);
+    }
+  }
+
+  /// Public `POST pending-teacher-request` — no auth header required.
+  Future<void> submitPendingTeacher(CreatePendingTeacherRequest body) async {
+    try {
+      await api.pendingTeacherRequest(body.toJson());
+    } on DioException catch (e) {
+      final parsed = NestFieldErrors.parse(
+        e.response?.data,
+        fallback: 'تعذر إرسال طلب التسجيل',
+      );
+      throw AuthException(parsed.message, fieldErrors: parsed.byField);
     }
   }
 
