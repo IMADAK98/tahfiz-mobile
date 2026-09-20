@@ -571,6 +571,8 @@ class _DateRow extends StatelessWidget {
                 children: [
                   Text(
                     date,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontWeight: FontWeight.w700,
                       fontSize: 13,
@@ -1011,17 +1013,20 @@ class _ProgressCard extends StatelessWidget {
             const SizedBox(height: 8),
             Row(
               children: [
-                Text(
-                  recorded ? 'تم اليوم' : 'لم يُسجَّل اليوم',
-                  style: TextStyle(
-                    color: recorded
-                        ? AppColors.progressDone
-                        : AppColors.textMuted,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
+                Expanded(
+                  child: Text(
+                    recorded ? 'تم اليوم' : 'لم يُسجَّل اليوم',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: recorded
+                          ? AppColors.progressDone
+                          : AppColors.textMuted,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
-                const Spacer(),
                 InkWell(
                   onTap: onOpen,
                   borderRadius: BorderRadius.circular(8),

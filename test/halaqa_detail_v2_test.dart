@@ -201,6 +201,28 @@ void main() {
     expect(find.text('progress-editor-2'), findsOneWidget);
   });
 
+  testWidgets('390-wide phone does not overflow on any tab', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await pumpDetail(tester, _FakeHomeRepo(students: sampleStudents()));
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(find.text('تعديل الحضور'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(find.byKey(const Key('halaqa-tab-progress')));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(find.byKey(const Key('halaqa-tab-overview')));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('overview is read-only meta + names', (tester) async {
     await pumpDetail(tester, _FakeHomeRepo(students: sampleStudents()));
 
