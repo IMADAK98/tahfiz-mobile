@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/network/dio_client.dart';
 import '../../../core/storage/secure_storage_service.dart';
 import 'auth_api.dart';
+import 'dto/center_option.dart';
+import 'dto/create_pending_teacher_request.dart';
 import 'dto/login_response.dart';
 
 final authApiProvider = Provider<AuthApi>((ref) {
@@ -19,8 +21,11 @@ final authRepositoryProvider = Provider<AuthRepository>((ref) {
 
 /// Thrown when Nest returns an auth/API error with a user-facing message.
 class AuthException implements Exception {
-  AuthException(this.message);
+  AuthException(this.message, {this.fieldErrors = const {}});
   final String message;
+
+  /// Nest `errors[{fieldName,message}]` — first/joined message per field.
+  final Map<String, String> fieldErrors;
 
   @override
   String toString() => message;
@@ -42,6 +47,31 @@ String nestErrorMessage(Object error) {
     }
   }
   return error.toString();
+}
+
+/// Parse Nest `{ errors: [{ fieldName, message }] }` (and AuthException).
+Map<String, String> nestFieldErrors(Object error) {
+  if (error is AuthException) return error.fieldErrors;
+  if (error is DioException) {
+    return _fieldErrorsFromData(error.response?.data);
+  }
+  return const {};
+}
+
+Map<String, String> _fieldErrorsFromData(dynamic data) {
+  if (data is! Map) return const {};
+  final errors = data['errors'];
+  if (errors is! List) return const {};
+  final collected = <String, List<String>>{};
+  for (final item in errors) {
+    if (item is! Map) continue;
+    final name = item['fieldName']?.toString() ?? '';
+    final message = item['message']?.toString() ?? '';
+    if (name.isEmpty || message.isEmpty) continue;
+    collected.putIfAbsent(name, () => []).add(message);
+  }
+  if (collected.isEmpty) return const {};
+  return collected.map((key, value) => MapEntry(key, value.join('\n')));
 }
 
 class AuthRepository {
@@ -124,5 +154,45 @@ class AuthRepository {
   Future<bool> hasAccessToken() async {
     final token = await storage.readAccessToken();
     return token != null && token.isNotEmpty;
+  }
+
+  Future<List<CenterOption>> listCenters() async {
+    try {
+      final res = await api.getCenters();
+      return _parseCenters(res.data);
+    } on DioException catch (e) {
+      throw AuthException(nestErrorMessage(e), fieldErrors: nestFieldErrors(e));
+    }
+  }
+
+  Future<void> submitPendingTeacherRequest(
+    CreatePendingTeacherRequestDto dto,
+  ) async {
+    try {
+      await api.pendingTeacherRequest(dto.toJson());
+    } on DioException catch (e) {
+      throw AuthException(
+        nestErrorMessage(e),
+        fieldErrors: nestFieldErrors(e),
+      );
+    }
+  }
+
+  static List<CenterOption> _parseCenters(dynamic raw) {
+    dynamic list = raw;
+    if (raw is Map) {
+      list = raw['data'] ?? raw['centers'] ?? raw['items'];
+    }
+    if (list is! List) return const [];
+    final out = <CenterOption>[];
+    for (final item in list) {
+      if (item is! Map) continue;
+      final option = CenterOption.fromJson(Map<String, dynamic>.from(item));
+      if (option.id <= 0 || option.name.isEmpty) continue;
+      final active = item['isActive'];
+      if (active == false) continue;
+      out.add(option);
+    }
+    return out;
   }
 }

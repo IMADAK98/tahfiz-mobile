@@ -63,4 +63,9 @@ class AuthApi {
   Future<Response<dynamic>> register(Map<String, dynamic> body) {
     return _dio.post(ApiPaths.register, data: body);
   }
+
+  /// Public `GET /center` for signup مركز العمل.
+  Future<Response<dynamic>> getCenters() {
+    return _dio.get(ApiPaths.centers);
+  }
 }

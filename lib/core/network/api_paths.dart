@@ -9,6 +9,7 @@ abstract final class ApiPaths {
   static const resetPassword = 'auth/mobile/reset-password';
   static const pendingTeacherRequest = 'pending-teacher-request';
   static const register = 'register';
+  static const centers = 'center';
 
   // Teacher / home
   static const teacherProfile = 'teacher-profile/';
