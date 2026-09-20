@@ -74,7 +74,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         name: 'halaqaDetail',
         builder: (context, state) {
           final id = state.pathParameters['id'] ?? '';
-          return HalaqaDetailPage(halaqaId: id);
+          final edit = state.uri.queryParameters['edit'];
+          return HalaqaDetailPage(
+            halaqaId: id,
+            startInEdit: edit == '1' || edit == 'true',
+          );
         },
       ),
       GoRoute(
