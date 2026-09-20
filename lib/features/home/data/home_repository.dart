@@ -186,42 +186,79 @@ class HomeRepository {
     }
   }
 
-  /// Save one student's attendance for a term day.
-  ///
-  /// Heuristic: null / empty / NOT_MARKED → POST create; else PUT update.
-  /// On 400/409 from the first attempt, retries the other verb.
+  /// Nest bulk POST vs PUT: unmarked / NOT_MARKED / HOLIDAY → create.
+  static bool isCreateAttendanceStatus(String? previousStatus) {
+    final prev = previousStatus?.trim().toUpperCase() ?? '';
+    return prev.isEmpty ||
+        prev == 'NOT_MARKED' ||
+        prev == 'NULL' ||
+        prev == 'HOLIDAY';
+  }
+
+  /// Save one student's attendance for a term day (bulk endpoint, one row).
   Future<void> saveStudentAttendance({
     required String halaqaId,
     required String date,
     required String studentUserId,
     required String status,
     String? previousStatus,
-  }) async {
-    final termDayId = await resolveTermDayId(halaqaId: halaqaId, date: date);
-    final userId = int.tryParse(studentUserId.trim());
-    if (userId == null) {
-      throw HomeException('معرّف الطالب غير صالح');
-    }
-    final nestStatus = status.trim().toUpperCase();
-    final body = <String, dynamic>{
-      'termDayId': termDayId,
-      'students': [
-        {'userId': userId, 'status': nestStatus},
+  }) {
+    return saveHalaqaAttendance(
+      halaqaId: halaqaId,
+      date: date,
+      entries: [
+        (
+          userId: studentUserId,
+          status: status,
+          previousStatus: previousStatus,
+        ),
       ],
-    };
+    );
+  }
 
-    final prev = previousStatus?.trim().toUpperCase() ?? '';
-    final isCreate = prev.isEmpty ||
-        prev == 'NOT_MARKED' ||
-        prev == 'NULL' ||
-        prev == 'HOLIDAY';
+  /// Save the ḥalaqa roster's attendance for a term day.
+  ///
+  /// Splits unmarked → POST `attendance/bulk` and marked → PUT `attendance/bulk`.
+  /// On 400/409 from the first attempt, retries the other verb (same heuristic
+  /// as the per-student editor).
+  Future<void> saveHalaqaAttendance({
+    required String halaqaId,
+    required String date,
+    required List<({String userId, String status, String? previousStatus})>
+        entries,
+  }) async {
+    if (entries.isEmpty) return;
+    final termDayId = await resolveTermDayId(halaqaId: halaqaId, date: date);
 
-    Future<void> post() async {
-      await api.bulkAttendance(body);
+    final creates = <Map<String, dynamic>>[];
+    final updates = <Map<String, dynamic>>[];
+    for (final e in entries) {
+      final userId = int.tryParse(e.userId.trim());
+      if (userId == null) {
+        throw HomeException('معرّف الطالب غير صالح');
+      }
+      final item = <String, dynamic>{
+        'userId': userId,
+        'status': e.status.trim().toUpperCase(),
+      };
+      if (isCreateAttendanceStatus(e.previousStatus)) {
+        creates.add(item);
+      } else {
+        updates.add(item);
+      }
     }
 
-    Future<void> put() async {
-      await api.updateBulkAttendance(body);
+    Map<String, dynamic> body(List<Map<String, dynamic>> students) => {
+          'termDayId': termDayId,
+          'students': students,
+        };
+
+    Future<void> post(List<Map<String, dynamic>> students) async {
+      await api.bulkAttendance(body(students));
+    }
+
+    Future<void> put(List<Map<String, dynamic>> students) async {
+      await api.updateBulkAttendance(body(students));
     }
 
     bool shouldFlip(DioException e) {
@@ -230,22 +267,23 @@ class HomeRepository {
     }
 
     try {
-      if (isCreate) {
+      if (creates.isNotEmpty) {
         try {
-          await post();
+          await post(creates);
         } on DioException catch (e) {
           if (shouldFlip(e)) {
-            await put();
+            await put(creates);
           } else {
             throw HomeException(nestErrorMessage(e));
           }
         }
-      } else {
+      }
+      if (updates.isNotEmpty) {
         try {
-          await put();
+          await put(updates);
         } on DioException catch (e) {
           if (shouldFlip(e)) {
-            await post();
+            await post(updates);
           } else {
             throw HomeException(nestErrorMessage(e));
           }

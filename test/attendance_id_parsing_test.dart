@@ -64,6 +64,38 @@ void main() {
       expect(s.id, '8');
       expect(s.attendanceStatus, 'NOT_MARKED');
       expect(s.isPresent, isFalse);
+      expect(s.attendanceMark, isNull);
+    });
+
+    test('LEAVE and EXCUSED map to معذور', () {
+      expect(AttendanceMarkX.tryParse('LEAVE'), AttendanceMark.leave);
+      expect(AttendanceMarkX.tryParse('EXCUSED'), AttendanceMark.leave);
+      expect(AttendanceMark.leave.labelAr, 'معذور');
+    });
+
+    test('parses hasProgressToday from nested dailyProgress.isProgress', () {
+      final recorded = HalaqaStudent.fromJson({
+        'userId': 1,
+        'name': 'خالد',
+        'dailyProgress': {'isProgress': true},
+      });
+      expect(recorded.hasProgressToday, isTrue);
+
+      final none = HalaqaStudent.fromJson({
+        'userId': 2,
+        'name': 'سارة',
+      });
+      expect(none.hasProgressToday, isFalse);
+    });
+  });
+
+  group('HomeRepository.isCreateAttendanceStatus', () {
+    test('unmarked statuses create; PRESENT/ABSENT/LATE/LEAVE update', () {
+      expect(HomeRepository.isCreateAttendanceStatus(null), isTrue);
+      expect(HomeRepository.isCreateAttendanceStatus('NOT_MARKED'), isTrue);
+      expect(HomeRepository.isCreateAttendanceStatus('HOLIDAY'), isTrue);
+      expect(HomeRepository.isCreateAttendanceStatus('PRESENT'), isFalse);
+      expect(HomeRepository.isCreateAttendanceStatus('LEAVE'), isFalse);
     });
   });
 }

@@ -1,3 +1,37 @@
+/// Locked attendance chips: حاضر / غائب / متأخر / معذور (LEAVE→معذور).
+enum AttendanceMark { present, absent, late, leave }
+
+extension AttendanceMarkX on AttendanceMark {
+  String get apiValue => switch (this) {
+        AttendanceMark.present => 'PRESENT',
+        AttendanceMark.absent => 'ABSENT',
+        AttendanceMark.late => 'LATE',
+        AttendanceMark.leave => 'LEAVE',
+      };
+
+  String get labelAr => switch (this) {
+        AttendanceMark.present => 'حاضر',
+        AttendanceMark.absent => 'غائب',
+        AttendanceMark.late => 'متأخر',
+        AttendanceMark.leave => 'معذور',
+      };
+
+  static AttendanceMark? tryParse(String? raw) {
+    if (raw == null) return null;
+    final s = raw.trim().toUpperCase();
+    if (s.isEmpty || s == 'NOT_MARKED' || s == 'HOLIDAY' || s == 'NULL') {
+      return null;
+    }
+    return switch (s) {
+      'PRESENT' => AttendanceMark.present,
+      'ABSENT' => AttendanceMark.absent,
+      'LATE' => AttendanceMark.late,
+      'LEAVE' || 'EXCUSED' => AttendanceMark.leave,
+      _ => null,
+    };
+  }
+}
+
 /// One student row on the ḥalaqa detail roster (defensive Nest parsing).
 class HalaqaStudent {
   const HalaqaStudent({
@@ -7,6 +41,7 @@ class HalaqaStudent {
     this.hifzPercent = 0,
     this.tathbeetPercent = 0,
     this.murajaaPercent = 0,
+    this.hasProgressToday = false,
   });
 
   final String id;
@@ -19,9 +54,30 @@ class HalaqaStudent {
   final double tathbeetPercent;
   final double murajaaPercent;
 
+  /// Date-scoped roster hint for «تم اليوم» vs «لم يُسجَّل اليوم».
+  final bool hasProgressToday;
+
   bool get isPresent {
     final s = attendanceStatus?.toUpperCase().trim();
     return s == 'PRESENT';
+  }
+
+  AttendanceMark? get attendanceMark =>
+      AttendanceMarkX.tryParse(attendanceStatus);
+
+  HalaqaStudent copyWith({
+    String? attendanceStatus,
+    bool? hasProgressToday,
+  }) {
+    return HalaqaStudent(
+      id: id,
+      name: name,
+      attendanceStatus: attendanceStatus ?? this.attendanceStatus,
+      hifzPercent: hifzPercent,
+      tathbeetPercent: tathbeetPercent,
+      murajaaPercent: murajaaPercent,
+      hasProgressToday: hasProgressToday ?? this.hasProgressToday,
+    );
   }
 
   factory HalaqaStudent.fromJson(Map<String, dynamic> json) {
@@ -64,6 +120,7 @@ class HalaqaStudent {
       hifzPercent: percents.$1,
       tathbeetPercent: percents.$2,
       murajaaPercent: percents.$3,
+      hasProgressToday: _extractHasProgressToday(json),
     );
   }
 
@@ -109,6 +166,83 @@ class HalaqaStudent {
       if (s.isNotEmpty) return s;
     }
     return null;
+  }
+
+  /// Roster is already date-scoped; treat explicit progress flags as "today".
+  static bool _extractHasProgressToday(Map<String, dynamic> json) {
+    bool asBool(dynamic v) {
+      if (v == true) return true;
+      if (v == false) return false;
+      if (v is num) return v != 0;
+      if (v is String) {
+        final s = v.trim().toLowerCase();
+        return s == 'true' || s == '1' || s == 'yes';
+      }
+      return false;
+    }
+
+    bool fromMap(Map<String, dynamic> map) {
+      if (asBool(map['isProgress']) ||
+          asBool(map['is_progress']) ||
+          asBool(map['hasProgress']) ||
+          asBool(map['has_progress']) ||
+          asBool(map['recorded']) ||
+          asBool(map['isRecorded'])) {
+        return true;
+      }
+      return false;
+    }
+
+    final flags = [
+      json['hasProgressToday'],
+      json['has_progress_today'],
+      json['progressRecordedToday'],
+      json['progress_recorded_today'],
+      json['hasDailyProgress'],
+      json['has_daily_progress'],
+      json['isProgressToday'],
+      json['dailyProgressRecorded'],
+      json['isProgress'],
+      json['is_progress'],
+    ];
+    for (final f in flags) {
+      if (f != null && asBool(f)) return true;
+    }
+
+    final nested = [
+      json['dailyProgress'],
+      json['daily_progress'],
+      json['todayProgress'],
+      json['today_progress'],
+      json['progressToday'],
+      json['progress_today'],
+    ];
+    for (final n in nested) {
+      if (n is Map && fromMap(Map<String, dynamic>.from(n))) return true;
+      if (n is List) {
+        for (final item in n) {
+          if (item is Map && fromMap(Map<String, dynamic>.from(item))) {
+            return true;
+          }
+        }
+      }
+    }
+
+    final candidates = <dynamic>[
+      json['progress'],
+      json['progresses'],
+      json['studyPlanItems'],
+      json['study_plan_items'],
+    ];
+    for (final c in candidates) {
+      if (c is! List) continue;
+      for (final item in c) {
+        if (item is Map && fromMap(Map<String, dynamic>.from(item))) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   /// Returns (hifz, tathbeet, murajaa) percentages in 0–100.

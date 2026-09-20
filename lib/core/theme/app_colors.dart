@@ -33,6 +33,17 @@ abstract final class AppColors {
   static const Color lateSoft = Color(0xFFF5E6C8);
   static const Color excusedSoft = Color(0xFFDDE3F0);
 
+  /// Ḥalaqa detail v2 locked badges (view mode).
+  static const Color absentBadge = Color(0xFFF5EDEA);
+  static const Color absentFg = Color(0xFF8B4A3A);
+  static const Color lateBadge = Color(0xFFFFFAEB);
+  static const Color lateFg = Color(0xFFB54708);
+  static const Color leaveBadge = Color(0xFFEEF2F0);
+  static const Color leaveFg = Color(0xFF5A6B62);
+  static const Color progressDone = Color(0xFF1B6B45);
+  static const Color chipIdle = Color(0xFFF7F4EE);
+  static const Color chipIdleBorder = Color(0xFFD9D3C7);
+
   static const Color border = Color(0xFFE5DFD2);
   static const Color borderStrong = Color(0xFFD4CBB8);
   static const Color brandSoft = Color(0xFFE4F0EA);
