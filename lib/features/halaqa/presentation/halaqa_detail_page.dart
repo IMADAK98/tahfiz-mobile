@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -5,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/util/school_calendar.dart';
 import '../../home/data/home_repository.dart';
+import '../data/attendance_status.dart';
 import '../data/dto/halaqa_student.dart';
 
 /// Wired ḥalaqa detail: Nest roster + locked mock UI (halaqa-detail.html).
@@ -25,6 +28,17 @@ class _HalaqaDetailPageState extends ConsumerState<HalaqaDetailPage> {
   late String _date; // YYYY-MM-DD
   Set<String> _holidays = const {};
 
+  /// Optimistic chip status keyed by Nest User.id.
+  final Map<String, NestAttendanceStatus> _uiStatus = {};
+
+  /// Last known Nest raw status (NOT_MARKED / PRESENT / …) for POST vs PUT.
+  final Map<String, String?> _serverStatus = {};
+
+  // ponytail: 450ms debounce per student; ceiling = rapid taps only persist the
+  // last status. Flush on date change / back so a pending tap is not dropped.
+  final Map<String, Timer> _saveTimers = {};
+  static const _saveDebounce = Duration(milliseconds: 450);
+
   @override
   void initState() {
     super.initState();
@@ -32,7 +46,93 @@ class _HalaqaDetailPageState extends ConsumerState<HalaqaDetailPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
+  @override
+  void dispose() {
+    _cancelSaveTimers();
+    super.dispose();
+  }
+
+  void _cancelSaveTimers() {
+    for (final t in _saveTimers.values) {
+      t.cancel();
+    }
+    _saveTimers.clear();
+  }
+
+  void _syncRoster(List<HalaqaStudent> students) {
+    _students = students;
+    _serverStatus
+      ..clear()
+      ..addEntries(students.map((s) => MapEntry(s.id, s.attendanceStatus)));
+    _uiStatus
+      ..clear()
+      ..addEntries(
+        students.map(
+          (s) => MapEntry(s.id, displayAttendanceStatus(s.attendanceStatus)),
+        ),
+      );
+  }
+
+  NestAttendanceStatus _statusFor(HalaqaStudent s) =>
+      _uiStatus[s.id] ?? displayAttendanceStatus(s.attendanceStatus);
+
+  Future<void> _flushPendingSaves() async {
+    final ids = _saveTimers.keys.toList();
+    _cancelSaveTimers();
+    for (final id in ids) {
+      await _persist(id);
+    }
+  }
+
+  Future<void> _popAfterFlush() async {
+    await _flushPendingSaves();
+    if (mounted) context.pop();
+  }
+
+  void _onStudentCardTap(HalaqaStudent s) {
+    if (_loading) return;
+    final next = _statusFor(s).next;
+    setState(() => _uiStatus[s.id] = next);
+    _saveTimers[s.id]?.cancel();
+    _saveTimers[s.id] = Timer(_saveDebounce, () {
+      unawaited(_persist(s.id));
+    });
+  }
+
+  Future<void> _persist(String studentId) async {
+    final next = _uiStatus[studentId];
+    if (next == null) return;
+    final prev = _serverStatus[studentId];
+    if (parseNestAttendanceStatus(prev) == next) return;
+
+    final repo = ref.read(homeRepositoryProvider);
+    try {
+      await repo.saveStudentAttendance(
+        halaqaId: widget.halaqaId,
+        date: _date,
+        studentUserId: studentId,
+        status: next.apiValue,
+        previousStatus: prev,
+      );
+      _serverStatus[studentId] = next.apiValue;
+    } catch (e) {
+      if (!mounted) return;
+      if (_uiStatus[studentId] == next) {
+        setState(() {
+          _uiStatus[studentId] = displayAttendanceStatus(_serverStatus[studentId]);
+        });
+      }
+      final msg = e is HomeException ? e.message : e.toString();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(msg.isEmpty ? 'تعذر حفظ الحضور' : msg)),
+      );
+    }
+  }
+
   Future<void> _load({bool fromRefresh = false}) async {
+    if (fromRefresh) {
+      await _flushPendingSaves();
+    }
     if (!fromRefresh) {
       setState(() {
         _loading = true;
@@ -71,7 +171,7 @@ class _HalaqaDetailPageState extends ConsumerState<HalaqaDetailPage> {
       final students = results[0] as List<HalaqaStudent>;
       final name = results[1] as String?;
       setState(() {
-        _students = students;
+        _syncRoster(students);
         if (name != null && name.isNotEmpty) {
           _title = name;
         }
@@ -89,6 +189,7 @@ class _HalaqaDetailPageState extends ConsumerState<HalaqaDetailPage> {
 
   /// Reload roster only (keep title) after a date change.
   Future<void> _reloadRoster() async {
+    await _flushPendingSaves();
     setState(() {
       _loading = true;
       _error = null;
@@ -101,7 +202,7 @@ class _HalaqaDetailPageState extends ConsumerState<HalaqaDetailPage> {
       );
       if (!mounted) return;
       setState(() {
-        _students = students;
+        _syncRoster(students);
         _loading = false;
         _error = null;
       });
@@ -186,7 +287,7 @@ class _HalaqaDetailPageState extends ConsumerState<HalaqaDetailPage> {
               children: [
                 _TopBar(
                   title: _title,
-                  onBack: () => context.pop(),
+                  onBack: () => unawaited(_popAfterFlush()),
                 ),
                 const SizedBox(height: 8),
                 _ContextRow(
@@ -241,10 +342,15 @@ class _HalaqaDetailPageState extends ConsumerState<HalaqaDetailPage> {
                                     final s = _students[i];
                                     return _StudentCard(
                                       student: s,
-                                      onTap: () =>
-                                          context.push(
-                                        '/student/${s.id}/attendance?date=$_date&halaqaId=${widget.halaqaId}',
-                                      ),
+                                      status: _statusFor(s),
+                                      onTap: () => _onStudentCardTap(s),
+                                      onOpenHub: () async {
+                                        await _flushPendingSaves();
+                                        if (!context.mounted) return;
+                                        context.push(
+                                          '/student/${s.id}?date=$_date&halaqaId=${widget.halaqaId}',
+                                        );
+                                      },
                                     );
                                   },
                                 ),
@@ -462,15 +568,24 @@ class _DateChevron extends StatelessWidget {
 }
 
 class _StudentCard extends StatelessWidget {
-  const _StudentCard({required this.student, required this.onTap});
+  const _StudentCard({
+    required this.student,
+    required this.status,
+    required this.onTap,
+    required this.onOpenHub,
+  });
 
   final HalaqaStudent student;
+  final NestAttendanceStatus status;
   final VoidCallback onTap;
+  final VoidCallback onOpenHub;
 
   @override
   Widget build(BuildContext context) {
+    final accent = status.accent;
+    final cardBg = status.cardBackground;
     return Material(
-      color: Colors.white,
+      color: cardBg,
       borderRadius: BorderRadius.circular(14),
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
@@ -478,7 +593,7 @@ class _StudentCard extends StatelessWidget {
         child: Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: AppColors.border),
+            border: Border.all(color: accent.withValues(alpha: 0.28)),
             boxShadow: const [
               BoxShadow(
                 color: Color(0x0A15241C),
@@ -491,13 +606,13 @@ class _StudentCard extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Green accent on the visual right (start in RTL).
+                // Accent on the visual right (start in RTL).
                 Container(
                   width: 4,
                   margin: const EdgeInsets.symmetric(vertical: 10),
-                  decoration: const BoxDecoration(
-                    color: AppColors.brand,
-                    borderRadius: BorderRadius.only(
+                  decoration: BoxDecoration(
+                    color: accent,
+                    borderRadius: const BorderRadius.only(
                       topLeft: Radius.circular(4),
                       bottomLeft: Radius.circular(4),
                     ),
@@ -523,27 +638,26 @@ class _StudentCard extends StatelessWidget {
                                 ),
                               ),
                             ),
-                            if (student.isPresent) ...[
-                              const SizedBox(width: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: AppColors.presentSoft,
-                                  borderRadius: BorderRadius.circular(999),
-                                ),
-                                child: const Text(
-                                  'حاضر',
-                                  style: TextStyle(
-                                    color: AppColors.brand,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w800,
-                                  ),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(color: accent, width: 1.5),
+                              ),
+                              child: Text(
+                                status.labelAr,
+                                style: TextStyle(
+                                  color: accent,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w800,
                                 ),
                               ),
-                            ],
+                            ),
                           ],
                         ),
                         const SizedBox(height: 10),
@@ -572,12 +686,20 @@ class _StudentCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 4),
-                  child: Icon(
-                    Icons.chevron_left,
-                    color: AppColors.textMuted,
-                    size: 22,
+                InkWell(
+                  onTap: onOpenHub,
+                  borderRadius: BorderRadius.circular(8),
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 4),
+                    child: SizedBox(
+                      width: 28,
+                      height: 28,
+                      child: Icon(
+                        Icons.chevron_left,
+                        color: AppColors.textMuted,
+                        size: 22,
+                      ),
+                    ),
                   ),
                 ),
               ],

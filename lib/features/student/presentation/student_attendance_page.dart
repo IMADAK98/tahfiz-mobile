@@ -4,42 +4,9 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/util/school_calendar.dart';
+import '../../halaqa/data/attendance_status.dart';
 import '../../halaqa/data/dto/halaqa_student.dart';
 import '../../home/data/home_repository.dart';
-
-/// Nest attendance enums used by chips (LEAVE → معذور label only).
-enum NestAttendanceStatus { present, absent, late, leave }
-
-extension on NestAttendanceStatus {
-  String get apiValue => switch (this) {
-        NestAttendanceStatus.present => 'PRESENT',
-        NestAttendanceStatus.absent => 'ABSENT',
-        NestAttendanceStatus.late => 'LATE',
-        NestAttendanceStatus.leave => 'LEAVE',
-      };
-
-  String get labelAr => switch (this) {
-        NestAttendanceStatus.present => 'حاضر',
-        NestAttendanceStatus.absent => 'غائب',
-        NestAttendanceStatus.late => 'متأخر',
-        NestAttendanceStatus.leave => 'معذور',
-      };
-}
-
-NestAttendanceStatus? _parseNestStatus(String? raw) {
-  if (raw == null) return null;
-  final s = raw.trim().toUpperCase();
-  if (s.isEmpty || s == 'NOT_MARKED' || s == 'HOLIDAY' || s == 'NULL') {
-    return null;
-  }
-  return switch (s) {
-    'PRESENT' => NestAttendanceStatus.present,
-    'ABSENT' => NestAttendanceStatus.absent,
-    'LATE' => NestAttendanceStatus.late,
-    'LEAVE' || 'EXCUSED' => NestAttendanceStatus.leave,
-    _ => null,
-  };
-}
 
 /// Single-student attendance editor — locked mock student-attendance.html.
 class StudentAttendancePage extends ConsumerStatefulWidget {
@@ -149,8 +116,7 @@ class _StudentAttendancePageState
       setState(() {
         _student = match;
         _serverStatus = match?.attendanceStatus;
-        _selected = _parseNestStatus(match?.attendanceStatus) ??
-            NestAttendanceStatus.present;
+        _selected = displayAttendanceStatus(match?.attendanceStatus);
         if (name != null && name.isNotEmpty) {
           _title = name;
         }
@@ -189,8 +155,7 @@ class _StudentAttendancePageState
       setState(() {
         _student = match;
         _serverStatus = match?.attendanceStatus;
-        _selected = _parseNestStatus(match?.attendanceStatus) ??
-            NestAttendanceStatus.present;
+        _selected = displayAttendanceStatus(match?.attendanceStatus);
         _loading = false;
         _error = match == null ? 'الطالب غير موجود في هذه الحلقة' : null;
       });
