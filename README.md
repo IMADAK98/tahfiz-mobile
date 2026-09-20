@@ -20,7 +20,7 @@ Package: `thafiz_teacher` · Android id: `com.thafiz.thafiz_teacher` · API: `ht
 | Path                      | Screen                                     |
 | ------------------------- | ------------------------------------------ |
 | `/login`                  | Login                                      |
-| `/register`               | Teacher signup stub                        |
+| `/register`               | Teacher signup (4-step pending-teacher-request) |
 | `/recover-account`        | Recover + OTP (was `/revoverAccount`)      |
 | `/`                       | Bottom nav (home + profile)                |
 | `/halaqa/:id`             | Ḥalaqa students list                       |
