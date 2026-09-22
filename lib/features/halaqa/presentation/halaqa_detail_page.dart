@@ -803,11 +803,17 @@ class _SegmentedTabs extends StatelessWidget {
 
   Widget _pill({required String label, required _DetailTab value}) {
     final selected = tab == value;
+    final keyName = switch (value) {
+      _DetailTab.attendance => 'halaqa-tab-attendance',
+      _DetailTab.progress => 'halaqa-tab-progress',
+      _DetailTab.overview => 'halaqa-tab-overview',
+    };
     return Expanded(
       child: Material(
         color: selected ? AppColors.brandSoft : Colors.transparent,
         borderRadius: BorderRadius.circular(10),
         child: InkWell(
+          key: Key(keyName),
           borderRadius: BorderRadius.circular(10),
           onTap: () => onChanged(value),
           child: Container(

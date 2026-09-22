@@ -106,11 +106,12 @@ class _FakeHomeRepo extends HomeRepository {
   }
 
   @override
-  Future<void> saveHalaqaAttendance({
+  Future<void> saveStudentAttendance({
     required String halaqaId,
     required String date,
-    required List<({String userId, String status, String? previousStatus})>
-        entries,
+    required String studentUserId,
+    required String status,
+    String? previousStatus,
   }) async {}
 }
 
