@@ -40,6 +40,7 @@
 
 - اسم الخطة  
 - Items (1+): type **حفظ / تثبيت / مراجعة** · **من سورة / من آية** only · amount type (أسطر/صفحات) + value  
+- At most **one item of each type** (1 HIFZ + 1 TATHBEET + 1 MURAJAA). A second of the same type is refused. «+ إضافة عنصر» adds an unused type only (max 3).
 - **Create does not ask for «إلى».** List/expand may still **display** computed from→to if Nest returns it.
 
 - Assign students **after** save (separate screen) — keeps create form mobile-length

@@ -8,6 +8,26 @@ import '../../home/data/dto/progress_models.dart';
 import '../../home/data/home_repository.dart';
 import 'plans_chrome.dart';
 
+/// Shown when a draft would save two items of the same type.
+const kDuplicatePlanItemTypeError =
+    'لا يمكن إضافة أكثر من عنصر واحد من نفس النوع';
+
+/// First type not already in [used], or null when HIFZ, TATHBEET, and MURAJAA are taken.
+PlanItemType? nextUnusedPlanItemType(Iterable<PlanItemType> used) {
+  final taken = used.toSet();
+  for (final type in PlanItemType.values) {
+    if (!taken.contains(type)) return type;
+  }
+  return null;
+}
+
+/// Non-null when [types] repeats a type. One plan: at most one of each type.
+String? duplicatePlanItemTypeError(Iterable<PlanItemType> types) {
+  final list = types.toList();
+  if (list.length != list.toSet().length) return kDuplicatePlanItemTypeError;
+  return null;
+}
+
 class _DraftItem {
   PlanItemType type = PlanItemType.hifz;
   int fromSurah = 1;
@@ -44,11 +64,15 @@ class HalaqaPlansCreatePage extends ConsumerStatefulWidget {
     required this.halaqaId,
     this.halaqaName,
     this.studentCount = 0,
+    this.initialItemTypes,
   });
 
   final String halaqaId;
   final String? halaqaName;
   final int studentCount;
+
+  /// Seed draft types. Null = one HIFZ row. Tests pass duplicates to prove save blocks.
+  final List<PlanItemType>? initialItemTypes;
 
   @override
   ConsumerState<HalaqaPlansCreatePage> createState() =>
@@ -57,7 +81,7 @@ class HalaqaPlansCreatePage extends ConsumerStatefulWidget {
 
 class _HalaqaPlansCreatePageState extends ConsumerState<HalaqaPlansCreatePage> {
   final _nameCtrl = TextEditingController();
-  final _items = <_DraftItem>[_DraftItem()];
+  final _items = <_DraftItem>[];
   List<QuranSurah> _surahs = const [];
   bool _loadingSurahs = true;
   bool _saving = false;
@@ -71,6 +95,14 @@ class _HalaqaPlansCreatePageState extends ConsumerState<HalaqaPlansCreatePage> {
   @override
   void initState() {
     super.initState();
+    final seed = widget.initialItemTypes;
+    if (seed == null || seed.isEmpty) {
+      _items.add(_DraftItem());
+    } else {
+      for (final type in seed) {
+        _items.add(_DraftItem()..type = type);
+      }
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadSurahs());
   }
 
@@ -109,7 +141,9 @@ class _HalaqaPlansCreatePageState extends ConsumerState<HalaqaPlansCreatePage> {
   }
 
   void _addItem() {
-    setState(() => _items.add(_DraftItem()));
+    final next = nextUnusedPlanItemType(_items.map((item) => item.type));
+    if (next == null) return;
+    setState(() => _items.add(_DraftItem()..type = next));
   }
 
   void _removeItem(int index) {
@@ -128,6 +162,13 @@ class _HalaqaPlansCreatePageState extends ConsumerState<HalaqaPlansCreatePage> {
     final halaqaId = int.tryParse(widget.halaqaId);
     if (halaqaId == null) {
       setState(() => _error = 'معرّف الحلقة غير صالح');
+      return;
+    }
+    final typeError = duplicatePlanItemTypeError(
+      _items.map((item) => item.type),
+    );
+    if (typeError != null) {
+      setState(() => _error = typeError);
       return;
     }
     final bodies = <Map<String, dynamic>>[];
@@ -166,6 +207,8 @@ class _HalaqaPlansCreatePageState extends ConsumerState<HalaqaPlansCreatePage> {
 
   @override
   Widget build(BuildContext context) {
+    final canAddItem =
+        nextUnusedPlanItemType(_items.map((item) => item.type)) != null;
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
@@ -237,6 +280,10 @@ class _HalaqaPlansCreatePageState extends ConsumerState<HalaqaPlansCreatePage> {
                               item: _items[i],
                               surahs: _surahs,
                               canRemove: _items.length > 1,
+                              takenByOthers: {
+                                for (var j = 0; j < _items.length; j++)
+                                  if (j != i) _items[j].type,
+                              },
                               onChanged: () => setState(() {}),
                               onRemove: () => _removeItem(i),
                             ),
@@ -244,7 +291,7 @@ class _HalaqaPlansCreatePageState extends ConsumerState<HalaqaPlansCreatePage> {
                           ],
                           OutlinedButton(
                             key: const Key('plan-add-item'),
-                            onPressed: _addItem,
+                            onPressed: canAddItem ? _addItem : null,
                             style: OutlinedButton.styleFrom(
                               foregroundColor: AppColors.brand,
                               side: const BorderSide(
@@ -336,6 +383,7 @@ class _ItemBlock extends StatelessWidget {
     required this.item,
     required this.surahs,
     required this.canRemove,
+    required this.takenByOthers,
     required this.onChanged,
     required this.onRemove,
   });
@@ -344,6 +392,7 @@ class _ItemBlock extends StatelessWidget {
   final _DraftItem item;
   final List<QuranSurah> surahs;
   final bool canRemove;
+  final Set<PlanItemType> takenByOthers;
   final VoidCallback onChanged;
   final VoidCallback onRemove;
 
@@ -409,9 +458,13 @@ class _ItemBlock extends StatelessWidget {
                       children: [
                         for (final t in PlanItemType.values)
                           _TypePill(
+                            key: Key('plan-item-$index-type-${t.apiValue}'),
                             type: t,
                             selected: item.type == t,
+                            enabled:
+                                t == item.type || !takenByOthers.contains(t),
                             onTap: () {
+                              if (takenByOthers.contains(t)) return;
                               item.type = t;
                               onChanged();
                             },
@@ -564,14 +617,17 @@ class _Labeled extends StatelessWidget {
 
 class _TypePill extends StatelessWidget {
   const _TypePill({
+    super.key,
     required this.type,
     required this.selected,
     required this.onTap,
+    this.enabled = true,
   });
 
   final PlanItemType type;
   final bool selected;
   final VoidCallback onTap;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
@@ -580,27 +636,30 @@ class _TypePill extends StatelessWidget {
       PlanItemType.tathbeet => (AppColors.tathbeetSoft, AppColors.tathbeet),
       PlanItemType.murajaa => (AppColors.murajaaSoft, AppColors.murajaa),
     };
-    return Material(
-      color: selected ? bg : Colors.white,
-      borderRadius: BorderRadius.circular(999),
-      child: InkWell(
-        onTap: onTap,
+    return Opacity(
+      opacity: enabled ? 1 : 0.38,
+      child: Material(
+        color: selected ? bg : Colors.white,
         borderRadius: BorderRadius.circular(999),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(
-              color: selected ? fg : AppColors.borderStrong,
-              width: 1.5,
+        child: InkWell(
+          onTap: enabled ? onTap : null,
+          borderRadius: BorderRadius.circular(999),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                color: selected ? fg : AppColors.borderStrong,
+                width: 1.5,
+              ),
             ),
-          ),
-          child: Text(
-            type.labelAr,
-            style: TextStyle(
-              color: selected ? fg : AppColors.textMuted,
-              fontWeight: FontWeight.w800,
-              fontSize: 12,
+            child: Text(
+              type.labelAr,
+              style: TextStyle(
+                color: selected ? fg : AppColors.textMuted,
+                fontWeight: FontWeight.w800,
+                fontSize: 12,
+              ),
             ),
           ),
         ),
