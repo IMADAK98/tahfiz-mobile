@@ -119,22 +119,31 @@ class StudyPlanItemRef {
   }
 
   /// Cross-surah: `من [سورة] آية X → إلى [سورة] آية Y`; same-surah compact.
-  String formatPlanRange({String Function(int)? surahName}) {
+  /// Pass [full] true for plans expand rows (locked mock always uses من→إلى).
+  String formatPlanRange({
+    String Function(int)? surahName,
+    bool full = false,
+  }) {
     final fs = fromSurah;
     final fa = fromAyah;
     final ts = toSurah;
     final ta = toAyah;
-    if (fs == null || fa == null || ts == null || ta == null) {
+    if (fs == null || fa == null) {
       return '—';
     }
     final fromName = fromSurahName?.trim().isNotEmpty == true
         ? fromSurahName!.trim()
         : (surahName?.call(fs) ?? 'سورة $fs');
+
+    if (ts == null || ta == null) {
+      return 'من $fromName آية $fa';
+    }
+
     final toName = toSurahName?.trim().isNotEmpty == true
         ? toSurahName!.trim()
         : (surahName?.call(ts) ?? 'سورة $ts');
 
-    if (fs == ts) {
+    if (!full && fs == ts) {
       return '$fromName $fa–$ta';
     }
     return 'من $fromName آية $fa → إلى $toName آية $ta';

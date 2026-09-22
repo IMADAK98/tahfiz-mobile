@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:thafiz_teacher/core/storage/secure_storage_service.dart';
 import 'package:thafiz_teacher/core/theme/app_theme.dart';
 import 'package:thafiz_teacher/features/halaqa/data/dto/halaqa_student.dart';
+import 'package:thafiz_teacher/features/halaqa/data/dto/halaqa_study_plan.dart';
 import 'package:thafiz_teacher/features/halaqa/presentation/halaqa_detail_page.dart';
 import 'package:thafiz_teacher/features/home/data/home_api.dart';
 import 'package:thafiz_teacher/features/home/data/home_repository.dart';
@@ -36,6 +37,10 @@ class _FakeHomeRepo extends HomeRepository {
 
   @override
   Future<String?> getHalqaName(String halaqaId) async => 'حلقة الفجر';
+
+  @override
+  Future<List<HalaqaStudyPlan>> listHalaqaStudyPlans(String halaqaId) async =>
+      const [];
 
   @override
   Future<void> saveHalaqaAttendance({
@@ -223,7 +228,8 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('overview is read-only meta + names', (tester) async {
+  testWidgets('overview is read-only meta + names + plans entry',
+      (tester) async {
     await pumpDetail(tester, _FakeHomeRepo(students: sampleStudents()));
 
     await tester.tap(find.byKey(const Key('halaqa-tab-overview')));
@@ -232,6 +238,8 @@ void main() {
     expect(find.text('قائمة الطلاب'), findsOneWidget);
     expect(find.text('أحد–خميس'), findsOneWidget);
     expect(find.text('أحمد محمد'), findsOneWidget);
+    expect(find.byKey(const Key('halaqa-plans-entry')), findsOneWidget);
+    expect(find.text('الخطط'), findsOneWidget);
     expect(find.text('تعديل الحضور'), findsNothing);
     expect(find.text('حفظ الحضور'), findsNothing);
     expect(find.text('تسجيل تقدّم'), findsNothing);

@@ -6,6 +6,9 @@ import '../../features/auth/presentation/login_page.dart';
 import '../../features/auth/presentation/recover_account_page.dart';
 import '../../features/auth/presentation/register_page.dart';
 import '../../features/halaqa/presentation/halaqa_detail_page.dart';
+import '../../features/halaqa/presentation/halaqa_plans_assign_page.dart';
+import '../../features/halaqa/presentation/halaqa_plans_create_page.dart';
+import '../../features/halaqa/presentation/halaqa_plans_page.dart';
 import '../../features/home/presentation/bottom_nav_page.dart';
 import '../../features/student/presentation/student_attendance_page.dart';
 import '../../features/student/presentation/student_page.dart';
@@ -26,6 +29,34 @@ const _authLocations = {'/login', '/register', '/recover-account'};
         extra['halaqaId']?.toString() ?? extra['halqaId']?.toString();
   }
   return (date: date, halaqaId: halaqaId);
+}
+
+({String? halaqaName, int studentCount, String? planName, Set<String> assigned})
+    _plansExtra(GoRouterState state) {
+  final extra = state.extra;
+  if (extra is! Map) {
+    return (
+      halaqaName: null,
+      studentCount: 0,
+      planName: null,
+      assigned: const <String>{},
+    );
+  }
+  final assignedRaw = extra['assignedIds'];
+  final assigned = <String>{};
+  if (assignedRaw is Iterable) {
+    for (final v in assignedRaw) {
+      final s = v.toString().trim();
+      if (s.isNotEmpty) assigned.add(s);
+    }
+  }
+  final count = extra['studentCount'];
+  return (
+    halaqaName: extra['halaqaName']?.toString(),
+    studentCount: count is int ? count : int.tryParse('$count') ?? 0,
+    planName: extra['planName']?.toString(),
+    assigned: assigned,
+  );
 }
 
 /// go_router with a light access-token gate.
@@ -76,6 +107,53 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           final id = state.pathParameters['id'] ?? '';
           return HalaqaDetailPage(halaqaId: id);
         },
+        routes: [
+          GoRoute(
+            path: 'plans',
+            name: 'halaqaPlans',
+            builder: (context, state) {
+              final id = state.pathParameters['id'] ?? '';
+              final x = _plansExtra(state);
+              return HalaqaPlansPage(
+                halaqaId: id,
+                halaqaName: x.halaqaName,
+                studentCount: x.studentCount,
+              );
+            },
+            routes: [
+              GoRoute(
+                path: 'create',
+                name: 'halaqaPlansCreate',
+                builder: (context, state) {
+                  final id = state.pathParameters['id'] ?? '';
+                  final x = _plansExtra(state);
+                  return HalaqaPlansCreatePage(
+                    halaqaId: id,
+                    halaqaName: x.halaqaName,
+                    studentCount: x.studentCount,
+                  );
+                },
+              ),
+              GoRoute(
+                path: ':planId/assign',
+                name: 'halaqaPlansAssign',
+                builder: (context, state) {
+                  final id = state.pathParameters['id'] ?? '';
+                  final planId =
+                      int.tryParse(state.pathParameters['planId'] ?? '') ?? 0;
+                  final x = _plansExtra(state);
+                  return HalaqaPlansAssignPage(
+                    halaqaId: id,
+                    planId: planId,
+                    halaqaName: x.halaqaName,
+                    planName: x.planName,
+                    alreadyAssignedIds: x.assigned,
+                  );
+                },
+              ),
+            ],
+          ),
+        ],
       ),
       GoRoute(
         path: '/student/:id',
