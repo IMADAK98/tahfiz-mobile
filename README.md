@@ -23,9 +23,9 @@ Package: `thafiz_teacher` · Android id: `com.thafiz.thafiz_teacher` · API: `ht
 | `/register`               | Teacher signup (4-step pending-teacher-request) |
 | `/recover-account`        | Recover + OTP (was `/revoverAccount`)      |
 | `/`                       | Bottom nav (home + profile)                |
-| `/halaqa/:id`             | Ḥalaqa students list                       |
+| `/halaqa/:id`             | Ḥalaqa roster — tap card cycles حضور       |
 | `/student/:id`            | Student hub                                |
-| `/student/:id/attendance` | 4 chips: حاضر/غائب/متأخر/معذور             |
+| `/student/:id/attendance` | 4 chips: حاضر/غائب/متأخر/معذور (still registered; open from student hub, not roster card tap) |
 | `/student/:id/progress`   | Plan read-only; إلى سورة/آية; MURAJAA list |
 
 ## Product locks (progress UI)
@@ -36,6 +36,8 @@ Package: `thafiz_teacher` · Android id: `com.thafiz.thafiz_teacher` · API: `ht
 - MURAJAA: add/remove list
 - **No** وحدة / اتجاه fields
 - Attendance: Nest `LEAVE` → معذور only (no إجازة chip)
+- Ḥalaqa roster: tap student card cycles PRESENT → ABSENT → LATE → LEAVE (chips حاضر/غائب/متأخر/معذور). Unmarked (`NOT_MARKED`/null) shows حاضر in UI until Nest has a real status. Debounced save via `saveStudentAttendance` (bulk POST/PUT).
+- Old per-student route `/student/:id/attendance` is **still reachable**: chevron on the roster card → student hub → «تسجيل الحضور». Roster card tap no longer opens that page.
 
 ## Brand
 

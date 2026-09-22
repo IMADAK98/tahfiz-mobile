@@ -27,11 +27,13 @@ abstract final class AppColors {
   static const Color tathbeetPercentMid = Color(0xFF3E8F6A);
   static const Color tathbeetPercentHigh = Color(0xFF1F6B48);
 
-  /// Attendance chip accents.
+  /// Attendance chip accents (soft fills + matching solids).
   static const Color presentSoft = Color(0xFFE4F0EA);
   static const Color absentSoft = Color(0xFFF5D6D6);
   static const Color lateSoft = Color(0xFFF5E6C8);
   static const Color excusedSoft = Color(0xFFDDE3F0);
+  static const Color absent = Color(0xFF9B4040);
+  static const Color excused = Color(0xFF3E5278);
 
   static const Color border = Color(0xFFE5DFD2);
   static const Color borderStrong = Color(0xFFD4CBB8);
