@@ -7,6 +7,7 @@ import '../../../core/util/school_calendar.dart';
 import '../../home/data/home_repository.dart';
 import '../data/attendance_status.dart';
 import '../data/dto/halaqa_student.dart';
+import '../data/dto/halaqa_study_plan.dart';
 
 enum _DetailTab { attendance, progress, overview }
 
@@ -36,6 +37,7 @@ class _HalaqaDetailPageState extends ConsumerState<HalaqaDetailPage> {
   Set<String> _holidays = const {};
   _DetailTab _tab = _DetailTab.attendance;
   NestAttendanceStatus? _filter;
+  int _plansCount = 0;
 
   /// Optimistic chip status keyed by Nest User.id.
   final Map<String, NestAttendanceStatus> _uiStatus = {};
@@ -219,12 +221,18 @@ class _HalaqaDetailPageState extends ConsumerState<HalaqaDetailPage> {
       final results = await Future.wait([
         repo.getStudentsByHalqaId(halaqaId: widget.halaqaId, date: _date),
         repo.getHalqaName(widget.halaqaId),
+        // Plans count is best-effort — overview entry still shows if offline.
+        repo.listHalaqaStudyPlans(widget.halaqaId).catchError(
+              (_) => const <HalaqaStudyPlan>[],
+            ),
       ]);
       if (!mounted) return;
       final students = results[0] as List<HalaqaStudent>;
       final name = results[1] as String?;
+      final plans = results[2] as List<HalaqaStudyPlan>;
       setState(() {
         _syncRoster(students);
+        _plansCount = plans.length;
         if (name != null && name.isNotEmpty) {
           _title = name;
         }
@@ -521,6 +529,30 @@ class _HalaqaDetailPageState extends ConsumerState<HalaqaDetailPage> {
           count: _students.length,
         ),
         const SizedBox(height: 12),
+        _PlansEntryRow(
+          subtitle: HalaqaPlansCopy.plansEntrySubtitle(_plansCount),
+          onTap: () {
+            context
+                .push(
+              '/halaqa/${widget.halaqaId}/plans',
+              extra: {
+                'halaqaName': _title,
+                'studentCount': _students.length,
+              },
+            )
+                .then((_) {
+              // Refresh plan count after returning from management.
+              ref
+                  .read(homeRepositoryProvider)
+                  .listHalaqaStudyPlans(widget.halaqaId)
+                  .then((plans) {
+                if (!mounted) return;
+                setState(() => _plansCount = plans.length);
+              }).catchError((_) {});
+            });
+          },
+        ),
+        const SizedBox(height: 12),
         if (_students.isEmpty)
           const Padding(
             padding: EdgeInsets.only(top: 36),
@@ -771,11 +803,17 @@ class _SegmentedTabs extends StatelessWidget {
 
   Widget _pill({required String label, required _DetailTab value}) {
     final selected = tab == value;
+    final keyName = switch (value) {
+      _DetailTab.attendance => 'halaqa-tab-attendance',
+      _DetailTab.progress => 'halaqa-tab-progress',
+      _DetailTab.overview => 'halaqa-tab-overview',
+    };
     return Expanded(
       child: Material(
         color: selected ? AppColors.brandSoft : Colors.transparent,
         borderRadius: BorderRadius.circular(10),
         child: InkWell(
+          key: Key(keyName),
           borderRadius: BorderRadius.circular(10),
           onTap: () => onChanged(value),
           child: Container(
@@ -1173,6 +1211,89 @@ class _ProgressCard extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Overview → «الخطط» entry (proposed delta; not a 4th tab).
+class _PlansEntryRow extends StatelessWidget {
+  const _PlansEntryRow({required this.subtitle, required this.onTap});
+
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        key: const Key('halaqa-plans-entry'),
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Ink(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppColors.borderStrong, width: 1.5),
+            boxShadow: const [
+              BoxShadow(color: Color(0x0A15241C), offset: Offset(0, 1)),
+            ],
+          ),
+          child: IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Container(
+                  width: 4,
+                  margin: const EdgeInsets.symmetric(vertical: 10),
+                  decoration: const BoxDecoration(
+                    color: AppColors.brand,
+                    borderRadius: BorderRadius.only(
+                      topLeft: Radius.circular(4),
+                      bottomLeft: Radius.circular(4),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(10, 12, 10, 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'الخطط',
+                          style: TextStyle(
+                            color: AppColors.brand,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 15,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle,
+                          style: const TextStyle(
+                            color: AppColors.textMuted,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const Padding(
+                  padding: EdgeInsets.only(left: 8),
+                  child: Icon(
+                    Icons.chevron_left,
+                    color: AppColors.textMuted,
+                    size: 22,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

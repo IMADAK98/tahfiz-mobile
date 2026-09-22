@@ -7,6 +7,7 @@ import '../../../core/storage/secure_storage_service.dart';
 import '../../../core/util/school_calendar.dart';
 import '../../auth/data/auth_repository.dart';
 import '../../halaqa/data/dto/halaqa_student.dart';
+import '../../halaqa/data/dto/halaqa_study_plan.dart';
 import 'dto/halqa_summary.dart';
 import 'dto/progress_models.dart';
 import 'home_api.dart';
@@ -146,6 +147,7 @@ class HomeRepository {
   }
 
   /// Optional study plans for the ḥalaqa (plan types / metadata).
+  /// Prefer [listHalaqaStudyPlans] for typed UI.
   Future<List<Map<String, dynamic>>> getStudyPlans(String halaqaId) async {
     try {
       final res = await api.getStudyPlans(halaqaId);
@@ -153,6 +155,100 @@ class HomeRepository {
     } on DioException catch (e) {
       final code = e.response?.statusCode;
       if (code == 404) return const [];
+      throw HomeException(nestErrorMessage(e));
+    }
+  }
+
+  /// Nest: `GET /halqa/study-plans/{halqaId}` — lightweight list + item types.
+  Future<List<HalaqaStudyPlan>> listHalaqaStudyPlans(String halaqaId) async {
+    try {
+      final res = await api.getStudyPlans(halaqaId);
+      return _parseStudyPlanList(res.data);
+    } on DioException catch (e) {
+      final code = e.response?.statusCode;
+      if (code == 404) return const [];
+      throw HomeException(nestErrorMessage(e));
+    }
+  }
+
+  /// Nest: `GET /study-plan/{id}/details` — items with to* + assigned students.
+  Future<HalaqaStudyPlan> getStudyPlanDetails(int planId) async {
+    try {
+      final res = await api.getStudyPlanDetails(planId);
+      final map = _unwrapMap(res.data);
+      if (map == null) {
+        throw HomeException('تعذر تحميل تفاصيل الخطة');
+      }
+      final plan = HalaqaStudyPlan.fromJson(map);
+      if (plan.id <= 0) {
+        throw HomeException('تعذر تحميل تفاصيل الخطة');
+      }
+      return plan.copyWith(detailsLoaded: true);
+    } on DioException catch (e) {
+      throw HomeException(nestErrorMessage(e));
+    }
+  }
+
+  /// Nest: `POST /study-plan` — items omit to*; Nest computes them.
+  Future<HalaqaStudyPlan> createStudyPlan({
+    required String name,
+    required int halaqaId,
+    required List<Map<String, dynamic>> studyPlanItems,
+    List<int>? studentIds,
+  }) async {
+    final body = <String, dynamic>{
+      'name': name,
+      'halqaId': halaqaId,
+      'studyPlanItems': studyPlanItems,
+    };
+    if (studentIds != null && studentIds.isNotEmpty) {
+      body['studentIds'] = studentIds;
+    }
+    try {
+      final res = await api.createStudyPlan(body);
+      final map = _unwrapMap(res.data);
+      if (map != null) {
+        final plan = HalaqaStudyPlan.fromJson(map);
+        if (plan.id > 0) return plan;
+      }
+      // 201 with empty/minimal body — callers should refresh list.
+      return HalaqaStudyPlan(id: 0, name: name);
+    } on DioException catch (e) {
+      throw HomeException(nestErrorMessage(e));
+    }
+  }
+
+  /// Nest: `DELETE /study-plan/{id}`.
+  Future<void> deleteStudyPlan(int planId) async {
+    try {
+      await api.deleteStudyPlan(planId);
+    } on DioException catch (e) {
+      throw HomeException(nestErrorMessage(e));
+    }
+  }
+
+  /// Nest: `POST /study-plan/{id}/assign-students`.
+  Future<void> assignStudentsToPlan({
+    required int planId,
+    required List<int> studentIds,
+  }) async {
+    if (studentIds.isEmpty) return;
+    try {
+      await api.assignStudentsToPlan(planId, studentIds);
+    } on DioException catch (e) {
+      throw HomeException(nestErrorMessage(e));
+    }
+  }
+
+  /// Nest: `DELETE /study-plan/{id}/unassign-students`.
+  Future<void> unassignStudentsFromPlan({
+    required int planId,
+    required List<int> studentIds,
+  }) async {
+    if (studentIds.isEmpty) return;
+    try {
+      await api.unassignStudentsFromPlan(planId, studentIds);
+    } on DioException catch (e) {
       throw HomeException(nestErrorMessage(e));
     }
   }
@@ -716,6 +812,16 @@ class HomeRepository {
       } else if (item is Map) {
         out.add(Map<String, dynamic>.from(item));
       }
+    }
+    return out;
+  }
+
+  static List<HalaqaStudyPlan> _parseStudyPlanList(dynamic raw) {
+    final maps = _parseMapList(raw);
+    final out = <HalaqaStudyPlan>[];
+    for (final map in maps) {
+      final plan = HalaqaStudyPlan.fromJson(map);
+      if (plan.id > 0) out.add(plan);
     }
     return out;
   }
