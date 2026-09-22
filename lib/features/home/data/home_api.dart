@@ -41,6 +41,43 @@ class HomeApi {
     return _dio.get('${ApiPaths.halqaStudyPlans}$halaqaId');
   }
 
+  /// Nest: `GET study-plan/{id}/details`.
+  Future<Response<dynamic>> getStudyPlanDetails(int planId) {
+    return _dio.get('${ApiPaths.studyPlanSlash}$planId/details');
+  }
+
+  /// Nest: `POST study-plan` — omit to* on items; Nest computes them.
+  Future<Response<dynamic>> createStudyPlan(Map<String, dynamic> body) {
+    return _dio.post(ApiPaths.studyPlan, data: body);
+  }
+
+  /// Nest: `DELETE study-plan/{id}`.
+  Future<Response<dynamic>> deleteStudyPlan(int planId) {
+    return _dio.delete('${ApiPaths.studyPlanSlash}$planId');
+  }
+
+  /// Nest: `POST study-plan/{id}/assign-students` body `{ studentIds: number[] }`.
+  Future<Response<dynamic>> assignStudentsToPlan(
+    int planId,
+    List<int> studentIds,
+  ) {
+    return _dio.post(
+      '${ApiPaths.studyPlanSlash}$planId/${ApiPaths.assignStudents}',
+      data: {'studentIds': studentIds},
+    );
+  }
+
+  /// Nest: `DELETE study-plan/{id}/unassign-students` body `{ studentIds }`.
+  Future<Response<dynamic>> unassignStudentsFromPlan(
+    int planId,
+    List<int> studentIds,
+  ) {
+    return _dio.delete(
+      '${ApiPaths.studyPlanSlash}$planId/${ApiPaths.unassignStudents}',
+      data: {'studentIds': studentIds},
+    );
+  }
+
   Future<Response<dynamic>> getHalqaById(String halaqaId) {
     return _dio.get('${ApiPaths.halqaById}$halaqaId');
   }
