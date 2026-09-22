@@ -38,7 +38,7 @@ class StudentPage extends StatelessWidget {
         appBar: AppBar(
           title: Text('الطالب #$studentId'),
           leading: IconButton(
-            icon: const Icon(Icons.arrow_forward),
+            icon: const Icon(Icons.arrow_back),
             onPressed: () => context.pop(),
           ),
         ),

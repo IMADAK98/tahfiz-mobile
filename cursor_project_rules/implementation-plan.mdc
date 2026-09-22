@@ -1,0 +1,56 @@
+---
+description: Ordered teacher-mobile work from thafiz-llm-pack. Update each step with Done + two-line summary.
+alwaysApply: true
+---
+
+# Implementation plan
+
+Follow in order. Do not start a later step until the current one is Done or explicitly Blocked.
+
+## Step 1 — Install LLM pack as knowledge base
+
+Done
+
+Copied `thafiz-llm-pack` into `cursor_project_rules/` and added `.cursor/rules` locks.
+Agents must read `cursor_project_rules/README.md` before writing Flutter.
+
+## Step 2 — Ḥalaqa detail v2 tabs (الحضور · التقدم · نظرة عامة)
+
+In progress — Imad asked to ship v2 on the existing `/halaqa/:id` route (home «التفاصيل»).
+Cloud agent implements tabs الحضور · التقدم · نظرة عامة on `HalaqaDetailPage`. No new route.
+
+Unmarked roster is `لم يُعلَّم`, not حاضر. Teacher must pick a chip before save.
+
+## Step 2b — Student progress v2 mocks (awaiting lock)
+
+Done — Imad asked to ship the v2 editor on the existing progress route.
+
+Wired `StudentProgressPage` to the mock: date pill, one attendance badge, term % from roster/`GET /reports/progress`, type tabs, plan read-only, إلى سورة/آية, `POST/PUT student-daily-progress`. Unbound CTA still stub (`قريباً`) until Step 3.
+
+Attendance-before-progress (Nest `C:\Users\user\Tahfiz\src` + this app): `GET study-plan/student/{id}` is 200 with the plan; `GET/POST student-daily-progress` is 409 with `code` + `attendanceStatus`. Flutter uses raw roster status (not the حاضر default) and shows blocked copy, not the assign CTA.
+
+Save must POST a new row for today: GET suggestions reuse a previous day’s `id` with `isProgress: false`. Trust that flag only — do not PUT the suggestion id.
+
+## Step 3 — Unbound study-plan assign (mobile)
+
+Mocks awaiting Imad lock (`ASSIGN-PLAN.md`). Flutter CTA still stub (`قريباً`).
+
+Picker: `GET /halqa/study-plans/{halaqaId}` then `POST /study-plan/{id}/assign-students` `{ studentIds: [thisStudent] }`. Empty ḥalaqa = no create. Do not add enroll-students.
+
+## Step 4 — Bottom-nav «خطة الدراسة»
+
+Pending
+
+Replace the `قريباً` placeholder with plans for the teacher’s ḥalaqāt
+(`GET /halqa/study-plans/{id}` / `GET /study-plan/by-teacher/{teacherId}`). Read-only list is enough until Imad asks for editors.
+
+## Step 5 — Profile from API
+
+Pending
+
+Replace fake name/email with `GET /teacher-profile` (JWT teacher). Logout stays.
+
+## Cancelled (do not resume unless Imad asks)
+
+Multi-state attendance toggle POC — pack cancelled it.
+This checkout already cycles roster card taps PRESENT→ABSENT→LATE→LEAVE with debounce save. Do not revert that without an ask.

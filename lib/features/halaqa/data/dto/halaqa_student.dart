@@ -24,6 +24,21 @@ class HalaqaStudent {
     return s == 'PRESENT';
   }
 
+  HalaqaStudent copyWith({
+    double? hifzPercent,
+    double? tathbeetPercent,
+    double? murajaaPercent,
+  }) {
+    return HalaqaStudent(
+      id: id,
+      name: name,
+      attendanceStatus: attendanceStatus,
+      hifzPercent: hifzPercent ?? this.hifzPercent,
+      tathbeetPercent: tathbeetPercent ?? this.tathbeetPercent,
+      murajaaPercent: murajaaPercent ?? this.murajaaPercent,
+    );
+  }
+
   factory HalaqaStudent.fromJson(Map<String, dynamic> json) {
     final nestedUser = _asMap(json['user']);
     final nestedStudent = _asMap(json['student']);
@@ -114,23 +129,26 @@ class HalaqaStudent {
   /// Returns (hifz, tathbeet, murajaa) percentages in 0–100.
   static (double, double, double) _extractPercents(Map<String, dynamic> json) {
     var hifz = _asPercent(
-      json['hifzProgress'] ??
-          json['hifz_progress'] ??
+      json['hifz_percentage'] ??
           json['hifzPercentage'] ??
+          json['hifzProgress'] ??
+          json['hifz_progress'] ??
           json['hifz'],
     );
     var tathbeet = _asPercent(
-      json['tathbeetProgress'] ??
+      json['tathbeet_percentage'] ??
+          json['tathbeetPercentage'] ??
+          json['tathbeetProgress'] ??
           json['tathbeet_progress'] ??
           json['retentionProgress'] ??
-          json['tathbeetPercentage'] ??
           json['tathbeet'],
     );
     var murajaa = _asPercent(
-      json['murajaaProgress'] ??
+      json['murajaa_percentage'] ??
+          json['murajaaPercentage'] ??
+          json['murajaaProgress'] ??
           json['murajaa_progress'] ??
           json['revisionProgress'] ??
-          json['murajaaPercentage'] ??
           json['murajaa'],
     );
 

@@ -5,17 +5,18 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/util/school_calendar.dart';
+import '../../halaqa/data/attendance_status.dart';
 import '../../halaqa/data/dto/halaqa_student.dart';
 import '../../home/data/dto/progress_models.dart';
 import '../../home/data/home_repository.dart';
 
-/// Student progress editor — locked mock `student-progress.html`.
+/// Student progress editor — v2 mock `student-progress-v2.html`.
 ///
 /// Product locks:
 /// - Plan block READ-ONLY (range + المقدار المطلوب اليوم)
 /// - Teacher fills إلى سورة + إلى آية only
 /// - HIFZ / TATHBEET: one pair; MURAJAA: list with add/remove
-/// - Attendance chips read-only on this page
+/// - One attendance badge (edit on ḥalaqa الحضور)
 class StudentProgressPage extends ConsumerStatefulWidget {
   const StudentProgressPage({
     super.key,
@@ -43,10 +44,15 @@ class _StudentProgressPageState extends ConsumerState<StudentProgressPage> {
   String _title = 'المعلم';
   String? _studentName;
   String? _attendanceStatus;
+  double _hifzPercent = 0;
+  double _tathbeetPercent = 0;
+  double _murajaaPercent = 0;
 
   List<StudyPlanItemRef> _items = const [];
   List<QuranSurah> _surahs = const [];
   PlanItemType? _selectedType;
+  /// Nest 409 when roster was not loaded (no ḥalaqa on the route).
+  bool _blockedByServer = false;
 
   DailyProgressSnapshot? _progress;
   StudyPlanItemRef? get _activeItem {
@@ -67,7 +73,12 @@ class _StudentProgressPageState extends ConsumerState<StudentProgressPage> {
   bool get _hasHalaqa =>
       widget.halaqaId != null && widget.halaqaId!.trim().isNotEmpty;
 
-  bool get _isUnbound => !_loading && _items.isEmpty && _error == null;
+  bool get _isUnbound =>
+      !_loading && _items.isEmpty && _error == null && !_progressBlocked;
+
+  bool get _progressBlocked =>
+      _blockedByServer ||
+      (_hasHalaqa && !canRecordDailyProgress(_attendanceStatus));
 
   @override
   void initState() {
@@ -106,7 +117,11 @@ class _StudentProgressPageState extends ConsumerState<StudentProgressPage> {
       }
 
       final futures = <Future<dynamic>>[
-        repo.getStudentStudyPlan(studentId: widget.studentId, date: _date),
+        repo.getStudentStudyPlan(
+          studentId: widget.studentId,
+          date: _date,
+          halaqaId: widget.halaqaId,
+        ),
         repo.getQuranSurahs(),
       ];
       if (_hasHalaqa) {
@@ -125,12 +140,18 @@ class _StudentProgressPageState extends ConsumerState<StudentProgressPage> {
 
       String? name;
       String? att;
+      var hifz = 0.0;
+      var tathbeet = 0.0;
+      var murajaa = 0.0;
       if (_hasHalaqa && results.length >= 3) {
         final students = results[2] as List<HalaqaStudent>;
         for (final s in students) {
           if (s.id == widget.studentId) {
             name = s.name;
             att = s.attendanceStatus;
+            hifz = s.hifzPercent;
+            tathbeet = s.tathbeetPercent;
+            murajaa = s.murajaaPercent;
             break;
           }
         }
@@ -164,6 +185,9 @@ class _StudentProgressPageState extends ConsumerState<StudentProgressPage> {
         _surahs = surahs;
         _studentName = name;
         _attendanceStatus = att;
+        _hifzPercent = hifz;
+        _tathbeetPercent = tathbeet;
+        _murajaaPercent = murajaa;
         if (halaqaName != null && halaqaName.isNotEmpty) {
           _title = halaqaName;
         } else if (name != null && name.isNotEmpty) {
@@ -173,7 +197,9 @@ class _StudentProgressPageState extends ConsumerState<StudentProgressPage> {
         _loading = false;
       });
 
-      if (initial != null) {
+      final rosterBlocks =
+          _hasHalaqa && !canRecordDailyProgress(att);
+      if (initial != null && !rosterBlocks) {
         await _loadProgressFor(initial);
       }
     } catch (e) {
@@ -186,6 +212,7 @@ class _StudentProgressPageState extends ConsumerState<StudentProgressPage> {
   }
 
   Future<void> _loadProgressFor(PlanItemType type) async {
+    if (_progressBlocked) return;
     StudyPlanItemRef? item;
     for (final i in _items) {
       if (i.type == type) {
@@ -239,6 +266,15 @@ class _StudentProgressPageState extends ConsumerState<StudentProgressPage> {
       setState(() => _loadingTab = false);
     } catch (e) {
       if (!mounted) return;
+      if (e is ProgressAttendanceException) {
+        setState(() {
+          _loadingTab = false;
+          _blockedByServer = true;
+          _attendanceStatus = e.attendanceStatus ?? _attendanceStatus;
+          _error = null;
+        });
+        return;
+      }
       setState(() {
         _loadingTab = false;
         _error = e is HomeException ? e.message : e.toString();
@@ -327,7 +363,7 @@ class _StudentProgressPageState extends ConsumerState<StudentProgressPage> {
   Future<void> _save() async {
     final item = _activeItem;
     final type = _selectedType;
-    if (item == null || type == null) return;
+    if (item == null || type == null || _progressBlocked) return;
 
     final snap = _progress;
     final startSurah = snap?.preferredStartSurah ??
@@ -396,14 +432,47 @@ class _StudentProgressPageState extends ConsumerState<StudentProgressPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('تم حفظ التقدّم')),
       );
+      await _refreshRosterPercents();
       await _loadProgressFor(type);
     } catch (e) {
       if (!mounted) return;
+      if (e is ProgressAttendanceException) {
+        setState(() {
+          _blockedByServer = true;
+          _attendanceStatus = e.attendanceStatus ?? _attendanceStatus;
+          _error = null;
+        });
+        return;
+      }
       setState(() {
         _error = e is HomeException ? e.message : e.toString();
       });
     } finally {
       if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _refreshRosterPercents() async {
+    if (!_hasHalaqa) return;
+    try {
+      final students = await ref.read(homeRepositoryProvider).getStudentsByHalqaId(
+            halaqaId: widget.halaqaId!.trim(),
+            date: _date,
+          );
+      if (!mounted) return;
+      for (final s in students) {
+        if (s.id != widget.studentId) continue;
+        setState(() {
+          _studentName = s.name;
+          _attendanceStatus = s.attendanceStatus;
+          _hifzPercent = s.hifzPercent;
+          _tathbeetPercent = s.tathbeetPercent;
+          _murajaaPercent = s.murajaaPercent;
+        });
+        return;
+      }
+    } catch (_) {
+      // ponytail: save already succeeded; chips can stay stale until next open.
     }
   }
 
@@ -435,6 +504,7 @@ class _StudentProgressPageState extends ConsumerState<StudentProgressPage> {
         !_loadingTab &&
         !_saving &&
         !_isUnbound &&
+        !_progressBlocked &&
         _activeItem != null;
 
     return Directionality(
@@ -449,7 +519,7 @@ class _StudentProgressPageState extends ConsumerState<StudentProgressPage> {
               children: [
                 _TopBar(title: _title, onBack: () => context.pop()),
                 const SizedBox(height: 8),
-                _ContextRow(date: _date),
+                _DateBlock(date: _date),
                 if (_error != null) ...[
                   const SizedBox(height: 8),
                   _ErrorBanner(
@@ -465,10 +535,26 @@ class _StudentProgressPageState extends ConsumerState<StudentProgressPage> {
                             color: AppColors.brand,
                           ),
                         )
-                      : _isUnbound
+                      : _progressBlocked
+                          ? _BlockedBody(
+                              studentName:
+                                  _studentName ?? 'الطالب #${widget.studentId}',
+                              attendanceStatus: _attendanceStatus,
+                              onBackToHalaqa: () {
+                                if (_hasHalaqa) {
+                                  context.go(
+                                    '/halaqa/${widget.halaqaId!.trim()}',
+                                  );
+                                } else {
+                                  context.pop();
+                                }
+                              },
+                            )
+                          : _isUnbound
                           ? _UnboundBody(
                               studentName:
                                   _studentName ?? 'الطالب #${widget.studentId}',
+                              attendanceStatus: _attendanceStatus,
                               onAssignStub: () {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
@@ -494,6 +580,11 @@ class _StudentProgressPageState extends ConsumerState<StudentProgressPage> {
                                   name: _studentName ??
                                       'الطالب #${widget.studentId}',
                                   attendanceStatus: _attendanceStatus,
+                                  hifzPercent: _hifzPercent,
+                                  tathbeetPercent: _tathbeetPercent,
+                                  murajaaPercent: _murajaaPercent,
+                                  recordedToday:
+                                      _progress?.hasSavedProgress == true,
                                   items: _items,
                                   selected: _selectedType,
                                   onSelect: _selectTab,
@@ -518,7 +609,7 @@ class _StudentProgressPageState extends ConsumerState<StudentProgressPage> {
                               ],
                             ),
                 ),
-                if (!_isUnbound && !_loading) ...[
+                if (!_isUnbound && !_progressBlocked && !_loading) ...[
                   const SizedBox(height: 10),
                   SizedBox(
                     height: 50,
@@ -598,7 +689,7 @@ class _TopBar extends StatelessWidget {
                 width: 36,
                 height: 36,
                 child: Icon(
-                  Icons.chevron_right,
+                  Icons.chevron_left,
                   color: AppColors.brand,
                   size: 22,
                 ),
@@ -625,26 +716,17 @@ class _TopBar extends StatelessWidget {
   }
 }
 
-class _ContextRow extends StatelessWidget {
-  const _ContextRow({required this.date});
+class _DateBlock extends StatelessWidget {
+  const _DateBlock({required this.date});
 
   final String date;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return Column(
       children: [
-        const Text(
-          'الطلاب',
-          style: TextStyle(
-            fontWeight: FontWeight.w800,
-            fontSize: 15,
-            color: AppColors.brand,
-          ),
-        ),
-        const Spacer(),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(999),
@@ -656,6 +738,15 @@ class _ContextRow extends StatelessWidget {
               fontWeight: FontWeight.w700,
               fontSize: 13,
             ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          SchoolCalendar.weekdayNameArFromYmd(date),
+          style: const TextStyle(
+            color: AppColors.brand,
+            fontWeight: FontWeight.w800,
+            fontSize: 15,
           ),
         ),
       ],
@@ -698,14 +789,101 @@ class _ErrorBanner extends StatelessWidget {
   }
 }
 
+class _BlockedBody extends StatelessWidget {
+  const _BlockedBody({
+    required this.studentName,
+    required this.attendanceStatus,
+    required this.onBackToHalaqa,
+  });
+
+  final String studentName;
+  final String? attendanceStatus;
+  final VoidCallback onBackToHalaqa;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  studentName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              _AttendanceBadge(status: attendanceStatus),
+            ],
+          ),
+        ),
+        Expanded(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                dailyProgressBlockedMessage(attendanceStatus),
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 17,
+                  color: AppColors.brand,
+                ),
+              ),
+              const SizedBox(height: 10),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 12),
+                child: Text(
+                  'الحضور يُحفظ من تبويب الحضور في الحلقة، ثم يمكن تسجيل التقدّم.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: 13,
+                    height: 1.55,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        SizedBox(
+          height: 50,
+          child: OutlinedButton(
+            onPressed: onBackToHalaqa,
+            child: const Text(
+              'العودة للحضور',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _UnboundBody extends StatelessWidget {
   const _UnboundBody({
     required this.studentName,
+    required this.attendanceStatus,
     required this.onAssignStub,
     required this.onBackToHalaqa,
   });
 
   final String studentName;
+  final String? attendanceStatus;
   final VoidCallback onAssignStub;
   final VoidCallback onBackToHalaqa;
 
@@ -715,7 +893,7 @@ class _UnboundBody extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Container(
-          padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+          padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(14),
@@ -724,28 +902,30 @@ class _UnboundBody extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                studentName,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 15,
-                ),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      studentName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  _AttendanceBadge(status: attendanceStatus),
+                ],
               ),
               const SizedBox(height: 6),
-              const Text.rich(
-                TextSpan(
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textMuted,
-                  ),
-                  children: [
-                    TextSpan(text: 'الخطة: '),
-                    TextSpan(
-                      text: 'غير محددة',
-                      style: TextStyle(color: Color(0xFF8A6A12)),
-                    ),
-                  ],
+              const Text(
+                'الخطة: غير محددة',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF8A6A12),
                 ),
               ),
             ],
@@ -829,6 +1009,10 @@ class _StudentCard extends StatelessWidget {
   const _StudentCard({
     required this.name,
     required this.attendanceStatus,
+    required this.hifzPercent,
+    required this.tathbeetPercent,
+    required this.murajaaPercent,
+    required this.recordedToday,
     required this.items,
     required this.selected,
     required this.onSelect,
@@ -848,6 +1032,10 @@ class _StudentCard extends StatelessWidget {
 
   final String name;
   final String? attendanceStatus;
+  final double hifzPercent;
+  final double tathbeetPercent;
+  final double murajaaPercent;
+  final bool recordedToday;
   final List<StudyPlanItemRef> items;
   final PlanItemType? selected;
   final ValueChanged<PlanItemType> onSelect;
@@ -866,223 +1054,272 @@ class _StudentCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final typesPresent = items.map((e) => e.type).toSet();
+    final types = [
+      for (final t in [
+        PlanItemType.hifz,
+        PlanItemType.tathbeet,
+        PlanItemType.murajaa,
+      ])
+        if (items.any((i) => i.type == t)) t,
+    ];
 
     return Container(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: AppColors.border),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0A15241C),
-            offset: Offset(0, 1),
-          ),
-        ],
       ),
-      child: IntrinsicHeight(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Container(
-              width: 4,
-              margin: const EdgeInsets.symmetric(vertical: 10),
-              decoration: const BoxDecoration(
-                color: AppColors.brand,
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(4),
-                  bottomLeft: Radius.circular(4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
+                  ),
                 ),
               ),
+              const SizedBox(width: 8),
+              _AttendanceBadge(status: attendanceStatus),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 4,
+            runSpacing: 4,
+            children: [
+              _MetricChip(kind: PlanItemType.hifz, percent: hifzPercent),
+              _MetricChip(kind: PlanItemType.murajaa, percent: murajaaPercent),
+              _MetricChip(
+                kind: PlanItemType.tathbeet,
+                percent: tathbeetPercent,
+              ),
+            ],
+          ),
+          if (types.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            _TypeTabs(
+              types: types,
+              selected: selected,
+              onSelect: onSelect,
             ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(10, 12, 12, 14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      name,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 15,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    _LockedAttendanceRow(status: attendanceStatus),
-                    const SizedBox(height: 10),
-                    Wrap(
-                      spacing: 5,
-                      runSpacing: 5,
-                      children: [
-                        for (final t in [
-                          PlanItemType.hifz,
-                          PlanItemType.tathbeet,
-                          PlanItemType.murajaa,
-                        ])
-                          if (typesPresent.contains(t))
-                            _TypeTab(
-                              type: t,
-                              selected: selected == t,
-                              onTap: () => onSelect(t),
-                            ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    if (loadingTab)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 24),
-                        child: Center(
-                          child: CircularProgressIndicator(
-                            color: AppColors.brand,
-                            strokeWidth: 2.5,
-                          ),
-                        ),
-                      )
-                    else if (activeItem != null) ...[
-                      Text.rich(
-                        TextSpan(
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.textMuted,
-                            height: 1.5,
-                          ),
-                          children: [
-                            const TextSpan(text: 'من الخطة: '),
-                            TextSpan(
-                              text: activeItem!.formatPlanRange(
-                                surahName: surahName,
-                              ),
-                              style: const TextStyle(
-                                color: AppColors.textPrimary,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      const Text(
-                        'المقدار المطلوب اليوم',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.textMuted,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        amountDisplay,
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      Container(height: 1, color: AppColors.border),
-                      const SizedBox(height: 12),
-                      Text(
-                        selected == PlanItemType.murajaa
-                            ? 'ما أنجزه الطالب اليوم — مراجعة'
-                            : 'ما أنجزه الطالب اليوم',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.brand,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      if (selected == PlanItemType.murajaa)
-                        _MurajaaEditor(
-                          rows: murRows,
-                          surahs: surahs,
-                          onSurah: onMurSurah,
-                          onAdd: onAddMur,
-                          onRemove: onRemoveMur,
-                        )
-                      else
-                        _EndPairRow(
-                          surahs: surahs,
-                          endSurah: endSurah,
-                          endAyahCtrl: endAyahCtrl,
-                          onSurah: onEndSurah,
-                        ),
-                    ],
-                  ],
-                ),
+            const SizedBox(height: 8),
+            Text(
+              recordedToday ? 'تم اليوم' : 'لم يُسجَّل اليوم',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: recordedToday ? AppColors.tathbeet : AppColors.textMuted,
               ),
             ),
           ],
+          const SizedBox(height: 12),
+          if (loadingTab)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: Center(
+                child: CircularProgressIndicator(
+                  color: AppColors.brand,
+                  strokeWidth: 2.5,
+                ),
+              ),
+            )
+          else if (activeItem != null) ...[
+            Container(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF7F3EA),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'نطاق الخطة (للقراءة)',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textMuted,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    activeItem!.formatPlanRange(surahName: surahName),
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'المقدار المطلوب اليوم',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textMuted,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    amountDisplay,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            Container(height: 1, color: AppColors.border),
+            const SizedBox(height: 12),
+            Text(
+              selected == PlanItemType.murajaa
+                  ? 'ما أنجزه الطالب اليوم — مراجعة'
+                  : 'ما أنجزه الطالب اليوم',
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                color: AppColors.brand,
+              ),
+            ),
+            const SizedBox(height: 10),
+            if (selected == PlanItemType.murajaa)
+              _MurajaaEditor(
+                rows: murRows,
+                surahs: surahs,
+                onSurah: onMurSurah,
+                onAdd: onAddMur,
+                onRemove: onRemoveMur,
+              )
+            else
+              _EndPairRow(
+                surahs: surahs,
+                endSurah: endSurah,
+                endAyahCtrl: endAyahCtrl,
+                onSurah: onEndSurah,
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _AttendanceBadge extends StatelessWidget {
+  const _AttendanceBadge({required this.status});
+
+  final String? status;
+
+  @override
+  Widget build(BuildContext context) {
+    final parsed = parseNestAttendanceStatus(status);
+    final label = attendanceLabelAr(parsed);
+    final bg = parsed?.cardBackground ?? AppColors.parchment;
+    final accent = parsed?.accent ?? AppColors.textMuted;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: accent.withValues(alpha: 0.35),
+          width: 1.5,
+        ),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w800,
+          color: accent,
         ),
       ),
     );
   }
 }
 
-class _LockedAttendanceRow extends StatelessWidget {
-  const _LockedAttendanceRow({required this.status});
+class _MetricChip extends StatelessWidget {
+  const _MetricChip({required this.kind, required this.percent});
 
-  final String? status;
-
-  static const _chips = [
-    ('PRESENT', 'حاضر'),
-    ('ABSENT', 'غائب'),
-    ('LATE', 'متأخر'),
-    ('LEAVE', 'معذور'),
-  ];
+  final PlanItemType kind;
+  final double percent;
 
   @override
   Widget build(BuildContext context) {
-    final raw = status?.trim().toUpperCase();
-    String? on;
-    if (raw == 'PRESENT') {
-      on = 'PRESENT';
-    } else if (raw == 'ABSENT') {
-      on = 'ABSENT';
-    } else if (raw == 'LATE') {
-      on = 'LATE';
-    } else if (raw == 'LEAVE' || raw == 'EXCUSED') {
-      on = 'LEAVE';
-    }
-
+    final (bg, fg, border) = switch (kind) {
+      PlanItemType.hifz => (
+          AppColors.hifzSoft,
+          AppColors.hifz,
+          AppColors.hifz.withValues(alpha: 0.25),
+        ),
+      PlanItemType.tathbeet => (
+          AppColors.tathbeetSoft,
+          AppColors.tathbeet,
+          AppColors.tathbeet.withValues(alpha: 0.30),
+        ),
+      PlanItemType.murajaa => (
+          AppColors.murajaaSoft,
+          AppColors.murajaa,
+          const Color(0xFFD4AF37).withValues(alpha: 0.45),
+        ),
+    };
+    final shown = percent.round().clamp(0, 100);
     return Container(
-      padding: const EdgeInsets.only(bottom: 10),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: AppColors.border)),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: border),
       ),
-      child: Wrap(
-        spacing: 5,
-        runSpacing: 5,
+      child: Text(
+        '${kind.labelAr} $shown%',
+        style: TextStyle(
+          color: fg,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+class _TypeTabs extends StatelessWidget {
+  const _TypeTabs({
+    required this.types,
+    required this.selected,
+    required this.onSelect,
+  });
+
+  final List<PlanItemType> types;
+  final PlanItemType? selected;
+  final ValueChanged<PlanItemType> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF3EEE8),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
         children: [
-          for (final c in _chips)
-            Opacity(
-              opacity: 0.55,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: on == c.$1
-                      ? AppColors.presentSoft
-                      : const Color(0xFFF7F4EE),
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(
-                    color: on == c.$1
-                        ? AppColors.brand
-                        : const Color(0xFFD9D3C7),
-                    width: 1.5,
-                  ),
-                ),
-                child: Text(
-                  c.$2,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                    color: on == c.$1
-                        ? AppColors.brand
-                        : AppColors.textMuted,
-                  ),
-                ),
+          for (final t in types)
+            Expanded(
+              child: _TypeTab(
+                type: t,
+                selected: selected == t,
+                onTap: () => onSelect(t),
               ),
             ),
         ],
@@ -1110,33 +1347,28 @@ class _TypeTab extends StatelessWidget {
       PlanItemType.murajaa => (AppColors.murajaaSoft, AppColors.murajaa),
     };
 
-    return Opacity(
-      opacity: selected ? 1 : 0.55,
-      child: Material(
-        color: bg,
+    return Material(
+      color: selected ? bg : Colors.transparent,
+      borderRadius: BorderRadius.circular(999),
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(999),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(999),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(
-                color: selected ? fg : fg.withValues(alpha: 0.3),
-                width: selected ? 1.5 : 1.5,
-              ),
-              boxShadow: selected
-                  ? [BoxShadow(color: fg, spreadRadius: 0.5, blurRadius: 0)]
-                  : null,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: selected ? fg : Colors.transparent,
+              width: 1.5,
             ),
-            child: Text(
-              type.labelAr,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-                color: fg,
-              ),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            type.labelAr,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+              color: selected ? fg : AppColors.textMuted,
             ),
           ),
         ),
@@ -1220,26 +1452,26 @@ class _MurajaaEditor extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               SizedBox(
-                width: 40,
-                height: 40,
+                width: 44,
+                height: 44,
                 child: OutlinedButton(
                   onPressed: rows.length <= 1 ? null : () => onRemove(i),
                   style: OutlinedButton.styleFrom(
                     padding: EdgeInsets.zero,
-                    foregroundColor: const Color(0xFFC62828),
+                    foregroundColor: AppColors.textMuted,
                     disabledForegroundColor:
-                        const Color(0xFFC62828).withValues(alpha: 0.35),
+                        AppColors.textMuted.withValues(alpha: 0.35),
                     side: const BorderSide(
-                      color: Color(0xFFC62828),
+                      color: AppColors.borderStrong,
                       width: 1.5,
                     ),
-                    backgroundColor: const Color(0xFFFDECEC),
+                    backgroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
                     ),
                   ),
                   child: const Text(
-                    '×',
+                    '−',
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w800,
@@ -1259,9 +1491,8 @@ class _MurajaaEditor extends StatelessWidget {
             onPressed: onAdd,
             style: OutlinedButton.styleFrom(
               foregroundColor: AppColors.brand,
-              backgroundColor: AppColors.brandSoft,
               side: const BorderSide(
-                color: AppColors.brand,
+                color: AppColors.borderStrong,
                 width: 1.5,
                 style: BorderStyle.solid,
               ),
@@ -1270,7 +1501,7 @@ class _MurajaaEditor extends StatelessWidget {
               ),
             ),
             child: const Text(
-              '+ إضافة مراجعة',
+              '+ إضافة مقطع',
               style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
             ),
           ),

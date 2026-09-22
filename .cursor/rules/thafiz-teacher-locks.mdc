@@ -1,0 +1,24 @@
+---
+description: Locked teacher-mobile product rules from thafiz-llm-pack.
+alwaysApply: true
+---
+
+# Product locks
+
+**Brand:** Cairo · تحفيظ · mark ت · primary `#1B4D3E` · parchment `#F3EEE3`. Gold `#D4AF37` rare.
+
+**Surfaces:** mobile = teacher daily write (attendance + progress). Web admin = setup/approvals/reports. Teachers do **not** enroll students.
+
+**Locked screens** (no visual restyle unless Imad asks): login, home-shell, ḥalaqa-detail v1, student-attendance, student-progress v1, teacher-signup 1–4.
+
+**Ḥalaqa detail v2** (tabs الحضور · التقدم · نظرة عامة) is **requested**: implement on `/halaqa/:id` (home «التفاصيل»). No extra route.
+
+**Student progress v2** is **requested**: implement on the existing `/student/:id/progress` route (ḥalaqa «تسجيل تقدّم»). v1 `student-progress.html` stays locked.
+
+**Attendance:** chips حاضر / غائب / متأخر / معذور only. Nest `LEAVE` → معذور. Soft light-green حاضر. Skip Fri/Sat + `holidayDates`. Bulk `POST`/`PUT` `/attendance/bulk` `{ termDayId, students: [{ userId, status }] }`. Term id = `GetHalqaDto.assignedToTermId`. Roster id = `userId` / `user.id`. Unmarked (`NOT_MARKED`/null) stays unmarked (`لم يُعلَّم`) — do not default to حاضر. Empty aggregated ≠ no students.
+
+**Progress:** plan block read-only. Teacher fills إلى سورة + إلى آية only. HIFZ/TATHBEET one pair each. MURAJAA = list. No وحدة/اتجاه. Unbound plan = empty state + CTA «تعيين / ربط خطة دراسية», never a blank screen. Daily write only when Nest attendance is PRESENT or LATE; unmarked / ABSENT / LEAVE / HOLIDAY → 409 (`ATTENDANCE_REQUIRED` / `ATTENDANCE_BLOCKS_PROGRESS`), blocked UI (not the unbound CTA).
+
+**Signup:** 4 steps, `POST /pending-teacher-request`. Nest 400 shape `{ errors: [{ fieldName, message }] }`.
+
+**Authz:** `GET /halqa/by-teacher-id/{id}` with `id` = JWT `userId` only. Do not call `POST /halqa/enroll-students`.

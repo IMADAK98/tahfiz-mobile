@@ -1,0 +1,32 @@
+/* Brand B — Damascus Paradise. Shared by mobile mocks. */
+:root {
+  --brand: #1b4d3e;
+  --brand-hover: #143b30;
+  --brand-soft: #e4f0ea;
+  --gold: #d4af37;
+  --gold-soft: #f7efcf;
+  --adobe: #8b4a3a;
+  --parchment: #f3eee3;
+  --elevated: #fffdf8;
+  --ink: #15241c;
+  --muted: #5a6b62;
+  --border: #ddd5c6;
+  --border-strong: #c9c0b0;
+  --danger: #b42318;
+  --danger-soft: #fef3f2;
+  --success: #1b6b45;
+  --success-soft: #e8f6ee;
+  --hifz: #1b4d3e;
+  --hifz-soft: #e4f0ea;
+  --tathbeet: #2e7d57;
+  --tathbeet-soft: #e3f2e9;
+  --murajaa: #8a6a12;
+  --murajaa-soft: #f8efcf;
+  --present-soft: #e4f0ea;
+  --radius-card: 12px;
+  --radius-field: 10px;
+  --radius-pill: 999px;
+  --phone-w: 390px;
+  --phone-h: 844px;
+  --font: "Cairo", system-ui, sans-serif;
+}

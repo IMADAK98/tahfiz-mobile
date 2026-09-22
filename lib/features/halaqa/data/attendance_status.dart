@@ -59,6 +59,22 @@ NestAttendanceStatus? parseNestAttendanceStatus(String? raw) {
   };
 }
 
-/// Roster UI default: unmarked / null → PRESENT.
-NestAttendanceStatus displayAttendanceStatus(String? raw) =>
-    parseNestAttendanceStatus(raw) ?? NestAttendanceStatus.present;
+/// Daily progress write: committed حاضر or متأخر only.
+bool canRecordDailyProgress(String? raw) {
+  final s = parseNestAttendanceStatus(raw);
+  return s == NestAttendanceStatus.present || s == NestAttendanceStatus.late;
+}
+
+String dailyProgressBlockedMessage(String? raw) {
+  final s = parseNestAttendanceStatus(raw);
+  return switch (s) {
+    NestAttendanceStatus.absent => 'لا يُسجَّل تقدّم للطالب الغائب',
+    NestAttendanceStatus.leave => 'لا يُسجَّل تقدّم للطالب المعذور',
+    _ => 'سجّل الحضور أولاً قبل تسجيل التقدّم',
+  };
+}
+
+const unmarkedAttendanceLabel = 'لم يُعلَّم';
+
+String attendanceLabelAr(NestAttendanceStatus? status) =>
+    status?.labelAr ?? unmarkedAttendanceLabel;

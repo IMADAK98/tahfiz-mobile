@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>تعيين / ربط خطة دراسية</title>
+    <link rel="stylesheet" href="assign-plan.css" />
+  </head>
+  <body>
+    <div class="phone">
+      <header class="topbar">
+        <a class="back" href="student-progress-v2-unbound.html" aria-label="رجوع">›</a>
+        <h1 class="title">نموذج عماد</h1>
+        <span class="spacer"></span>
+      </header>
+
+      <main class="scroll">
+        <article class="card">
+          <div class="name-row">
+            <h2 class="name">TEST Student PriorTerm</h2>
+            <span class="badge-present">حاضر</span>
+          </div>
+          <p class="plan-unset">الخطة: غير محددة</p>
+        </article>
+
+        <p class="lead">اختر خطة من خطط هذه الحلقة لربط هذا الطالب.</p>
+        <p class="warn">
+          يُربَط هذا الطالب فقط. تسجيل الطلاب في الحلقة من إدارة المركز — ليس من
+          هنا.
+        </p>
+
+        <p class="section-k tight">خطط الحلقة</p>
+
+        <button class="plan-pick is-on" type="button" data-plan="9">
+          <div class="pick-head">
+            <div>
+              <p class="plan-name">خطة نموذج عماد</p>
+              <p class="plan-meta">2 طلاب مربوطون</p>
+            </div>
+            <span class="radio" aria-hidden="true"></span>
+          </div>
+          <div class="plan-lines">
+            <div class="plan-line">
+              <span class="chip hifz">حفظ</span>
+              <span class="rng">الفاتحة 1 → البقرة 1</span>
+            </div>
+            <div class="plan-line">
+              <span class="chip tath">تثبيت</span>
+              <span class="rng">الفاتحة 2 → البقرة 5</span>
+            </div>
+            <div class="plan-line">
+              <span class="chip mur">مراجعة</span>
+              <span class="rng">الفاتحة 1–2</span>
+            </div>
+          </div>
+        </button>
+
+        <button class="plan-pick" type="button" data-plan="11">
+          <div class="pick-head">
+            <div>
+              <p class="plan-name">خطة الفاتحة</p>
+              <p class="plan-meta">0 طلاب مربوطون</p>
+            </div>
+            <span class="radio" aria-hidden="true"></span>
+          </div>
+          <div class="plan-lines">
+            <div class="plan-line">
+              <span class="chip hifz">حفظ</span>
+              <span class="rng">الفاتحة 1 → الفاتحة 7</span>
+            </div>
+          </div>
+        </button>
+      </main>
+
+      <div class="dock">
+        <a class="cta" href="student-progress-v2.html">ربط بهذه الخطة</a>
+        <a class="cta-outline" href="student-progress-v2-unbound.html">إلغاء</a>
+      </div>
+    </div>
+    <script>
+      document.querySelectorAll(".plan-pick").forEach((el) => {
+        el.addEventListener("click", () => {
+          document
+            .querySelectorAll(".plan-pick")
+            .forEach((x) => x.classList.remove("is-on"));
+          el.classList.add("is-on");
+        });
+      });
+    </script>
+  </body>
+</html>
