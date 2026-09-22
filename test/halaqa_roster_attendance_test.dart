@@ -5,6 +5,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:thafiz_teacher/core/storage/secure_storage_service.dart';
 import 'package:thafiz_teacher/features/halaqa/data/dto/halaqa_student.dart';
+import 'package:thafiz_teacher/features/halaqa/data/dto/halaqa_study_plan.dart';
 import 'package:thafiz_teacher/features/halaqa/presentation/halaqa_detail_page.dart';
 import 'package:thafiz_teacher/features/home/data/home_api.dart';
 import 'package:thafiz_teacher/features/home/data/home_repository.dart';
@@ -43,6 +44,10 @@ class _FakeHomeRepo extends HomeRepository {
 
   @override
   Future<String?> getHalqaName(String halaqaId) async => 'حلقة الاختبار';
+
+  @override
+  Future<List<HalaqaStudyPlan>> listHalaqaStudyPlans(String halaqaId) async =>
+      const [];
 
   @override
   Future<void> saveStudentAttendance({

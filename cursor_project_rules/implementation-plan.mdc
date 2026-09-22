@@ -16,10 +16,17 @@ Agents must read `cursor_project_rules/README.md` before writing Flutter.
 
 ## Step 2 — Ḥalaqa detail v2 tabs (الحضور · التقدم · نظرة عامة)
 
-In progress — Imad asked to ship v2 on the existing `/halaqa/:id` route (home «التفاصيل»).
-Cloud agent implements tabs الحضور · التقدم · نظرة عامة on `HalaqaDetailPage`. No new route.
+Done
 
+Implemented tabs الحضور · التقدم · نظرة عامة on `HalaqaDetailPage` (`/halaqa/:id`).
 Unmarked roster is `لم يُعلَّم`, not حاضر. Teacher must pick a chip before save.
+
+## Step 2c — Teacher ḥalaqa plans management (الخطط)
+
+Done
+
+Overview «الخطط» entry → list/create/assign screens (`docs/HALAQA-PLANS.md`).
+Not a 4th tab; attendance/progress tabs unchanged. Nest study-plan APIs wired.
 
 ## Step 2b — Student progress v2 mocks (awaiting lock)
 
