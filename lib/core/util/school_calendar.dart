@@ -72,4 +72,22 @@ abstract final class SchoolCalendar {
     if (y == null || mo == null || d == null) return null;
     return DateTime(y, mo, d);
   }
+
+  /// Arabic weekday for a local date (الأحد … السبت).
+  static String weekdayNameAr(DateTime d) {
+    return switch (DateTime(d.year, d.month, d.day).weekday) {
+      DateTime.monday => 'الاثنين',
+      DateTime.tuesday => 'الثلاثاء',
+      DateTime.wednesday => 'الأربعاء',
+      DateTime.thursday => 'الخميس',
+      DateTime.friday => 'الجمعة',
+      DateTime.saturday => 'السبت',
+      _ => 'الأحد',
+    };
+  }
+
+  static String weekdayNameArFromYmd(String ymd) {
+    final d = parseYmd(ymd);
+    return d == null ? '' : weekdayNameAr(d);
+  }
 }

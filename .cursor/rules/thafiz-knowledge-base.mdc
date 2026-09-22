@@ -1,0 +1,19 @@
+---
+description: Always read cursor_project_rules before coding this Flutter teacher app.
+alwaysApply: true
+---
+
+# Knowledge base
+
+This repo is **teacher mobile** (`thafiz_teacher`). Context lives in `cursor_project_rules/`.
+
+Before any feature or API change:
+
+1. `cursor_project_rules/README.md`
+2. `cursor_project_rules/implementation-plan.mdc`
+3. The matching file under `cursor_project_rules/thafiz-llm-pack/`
+
+Do not implement Angular admin, re-enrollment, or center signup here.
+Nest behavior truth: live `https://tahfiz.onrender.com` + branch `localization-refactor`. GitHub `main` is stale.
+
+Coding for this app is Cursor-only (not Grok Bot agents).

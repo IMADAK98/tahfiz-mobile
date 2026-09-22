@@ -46,4 +46,7 @@ abstract final class ApiPaths {
   static const term = 'term/';
   static const quranSurah = 'quran/surah/';
   static const quranSurahs = 'quran/surahs';
+
+  // Reports (teacher-readable on assigned ḥalaqa)
+  static const reportsProgress = 'reports/progress';
 }

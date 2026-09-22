@@ -4,27 +4,48 @@ import 'package:thafiz_teacher/features/halaqa/data/attendance_status.dart';
 import 'package:thafiz_teacher/features/halaqa/data/dto/halaqa_student.dart';
 
 void main() {
-  group('displayAttendanceStatus', () {
-    test('defaults NOT_MARKED / null / empty to PRESENT', () {
-      expect(displayAttendanceStatus(null), NestAttendanceStatus.present);
-      expect(displayAttendanceStatus(''), NestAttendanceStatus.present);
-      expect(displayAttendanceStatus('NOT_MARKED'), NestAttendanceStatus.present);
-      expect(displayAttendanceStatus('null'), NestAttendanceStatus.present);
-      expect(displayAttendanceStatus('HOLIDAY'), NestAttendanceStatus.present);
+  group('parseNestAttendanceStatus', () {
+    test('unmarked / null / holiday stay null — not حاضر', () {
+      expect(parseNestAttendanceStatus(null), isNull);
+      expect(parseNestAttendanceStatus(''), isNull);
+      expect(parseNestAttendanceStatus('NOT_MARKED'), isNull);
+      expect(parseNestAttendanceStatus('null'), isNull);
+      expect(parseNestAttendanceStatus('HOLIDAY'), isNull);
     });
 
     test('keeps Nest PRESENT / ABSENT / LATE / LEAVE', () {
-      expect(displayAttendanceStatus('PRESENT'), NestAttendanceStatus.present);
-      expect(displayAttendanceStatus('ABSENT'), NestAttendanceStatus.absent);
-      expect(displayAttendanceStatus('LATE'), NestAttendanceStatus.late);
-      expect(displayAttendanceStatus('LEAVE'), NestAttendanceStatus.leave);
-      expect(displayAttendanceStatus('EXCUSED'), NestAttendanceStatus.leave);
+      expect(parseNestAttendanceStatus('PRESENT'), NestAttendanceStatus.present);
+      expect(parseNestAttendanceStatus('ABSENT'), NestAttendanceStatus.absent);
+      expect(parseNestAttendanceStatus('LATE'), NestAttendanceStatus.late);
+      expect(parseNestAttendanceStatus('LEAVE'), NestAttendanceStatus.leave);
+      expect(parseNestAttendanceStatus('EXCUSED'), NestAttendanceStatus.leave);
+    });
+  });
+
+  group('canRecordDailyProgress', () {
+    test('PRESENT and LATE only', () {
+      expect(canRecordDailyProgress('PRESENT'), isTrue);
+      expect(canRecordDailyProgress('LATE'), isTrue);
+      expect(canRecordDailyProgress('ABSENT'), isFalse);
+      expect(canRecordDailyProgress('LEAVE'), isFalse);
+      expect(canRecordDailyProgress('NOT_MARKED'), isFalse);
+      expect(canRecordDailyProgress(null), isFalse);
+      expect(canRecordDailyProgress('HOLIDAY'), isFalse);
     });
 
-    test('parseNestAttendanceStatus leaves unmarked as null (POST heuristic)', () {
-      expect(parseNestAttendanceStatus(null), isNull);
-      expect(parseNestAttendanceStatus('NOT_MARKED'), isNull);
-      expect(parseNestAttendanceStatus('PRESENT'), NestAttendanceStatus.present);
+    test('blocked copy matches unmarked vs absent vs excused', () {
+      expect(
+        dailyProgressBlockedMessage('NOT_MARKED'),
+        'سجّل الحضور أولاً قبل تسجيل التقدّم',
+      );
+      expect(
+        dailyProgressBlockedMessage('ABSENT'),
+        'لا يُسجَّل تقدّم للطالب الغائب',
+      );
+      expect(
+        dailyProgressBlockedMessage('LEAVE'),
+        'لا يُسجَّل تقدّم للطالب المعذور',
+      );
     });
   });
 
@@ -68,7 +89,7 @@ void main() {
   });
 
   group('HalaqaStudent raw Nest vs UI default', () {
-    test('NOT_MARKED stays raw (userId parse untouched) while UI defaults PRESENT', () {
+    test('NOT_MARKED stays raw and is not treated as حاضر', () {
       final s = HalaqaStudent.fromJson({
         'id': 1001,
         'userId': 15,
@@ -78,7 +99,8 @@ void main() {
       expect(s.id, '15');
       expect(s.attendanceStatus, 'NOT_MARKED');
       expect(s.isPresent, isFalse);
-      expect(displayAttendanceStatus(s.attendanceStatus), NestAttendanceStatus.present);
+      expect(parseNestAttendanceStatus(s.attendanceStatus), isNull);
+      expect(attendanceLabelAr(null), 'لم يُعلَّم');
     });
   });
 }

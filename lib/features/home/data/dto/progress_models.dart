@@ -217,10 +217,8 @@ class DailyProgressSnapshot {
       return num.tryParse(v.toString());
     }
 
-    final isProgress = json['isProgress'] == true ||
-        json['is_progress'] == true ||
-        (json['status'] != null &&
-            json['status'].toString().toUpperCase() != 'SUGGESTION');
+    final isProgress =
+        json['isProgress'] == true || json['is_progress'] == true;
 
     return DailyProgressSnapshot(
       id: asInt(json['id']),
