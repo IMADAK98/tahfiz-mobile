@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>تسجيل تقدّم — حفظ</title>
+    <link rel="stylesheet" href="student-progress-v2.css" />
+  </head>
+  <body>
+    <div class="phone">
+      <header class="topbar">
+        <a class="back" href="halaqa-detail-v2-progress.html" aria-label="رجوع">›</a>
+        <h1 class="title">نموذج عماد</h1>
+        <span class="spacer"></span>
+      </header>
+
+      <div class="date-wrap">
+        <div class="date-pill">2026-09-20</div>
+        <p class="date-cap">يوم التسجيل · أحد–خميس</p>
+      </div>
+
+      <main class="scroll">
+        <article class="card">
+          <div class="name-row">
+            <h2 class="name">TEST Student PriorTerm</h2>
+            <span class="badge-present">حاضر</span>
+          </div>
+
+          <div class="metrics" aria-label="نسبة الدورة">
+            <span class="metric hifz">حفظ <span class="pct">59%</span></span>
+            <span class="metric mur">مراجعة <span class="pct">100%</span></span>
+            <span class="metric tath">تثبيت <span class="pct">100%</span></span>
+          </div>
+
+          <nav class="type-tabs" aria-label="نوع الخطة">
+            <a class="type-tab hifz is-on" href="student-progress-v2.html">حفظ</a>
+            <a class="type-tab tath" href="student-progress-v2-tathbeet.html">تثبيت</a>
+            <a class="type-tab mur" href="student-progress-v2-murajaa.html">مراجعة</a>
+          </nav>
+          <p class="today-hint">لم يُسجَّل اليوم</p>
+
+          <section class="plan" aria-label="الخطة">
+            <p class="plan-k">نطاق الخطة (للقراءة)</p>
+            <p class="plan-v">من الفاتحة آية 1 → إلى البقرة آية 1</p>
+            <div class="amt">
+              <p class="plan-k">المقدار المطلوب اليوم</p>
+              <p class="plan-v">1 صفحة</p>
+            </div>
+          </section>
+
+          <hr class="div" />
+
+          <p class="section-k">ما أنجزه الطالب اليوم</p>
+          <div class="pair">
+            <div class="field">
+              <label>إلى سورة</label>
+              <div class="ctrl">البقرة</div>
+            </div>
+            <div class="field">
+              <label>إلى آية</label>
+              <input value="17" inputmode="numeric" readonly />
+            </div>
+          </div>
+        </article>
+      </main>
+
+      <div class="dock">
+        <button class="cta" type="button">حفظ التقدّم</button>
+      </div>
+    </div>
+  </body>
+</html>

@@ -59,13 +59,11 @@ class _HalaqaDetailPageState extends ConsumerState<HalaqaDetailPage> {
     _serverStatus
       ..clear()
       ..addEntries(students.map((s) => MapEntry(s.id, s.attendanceStatus)));
-    _uiStatus
-      ..clear()
-      ..addEntries(
-        students.map(
-          (s) => MapEntry(s.id, displayAttendanceStatus(s.attendanceStatus)),
-        ),
-      );
+    _uiStatus.clear();
+    for (final s in students) {
+      final parsed = parseNestAttendanceStatus(s.attendanceStatus);
+      if (parsed != null) _uiStatus[s.id] = parsed;
+    }
     if (_editing) {
       _editBaseline
         ..clear()
@@ -73,17 +71,15 @@ class _HalaqaDetailPageState extends ConsumerState<HalaqaDetailPage> {
     }
   }
 
-  NestAttendanceStatus _statusFor(HalaqaStudent s) =>
-      _uiStatus[s.id] ?? displayAttendanceStatus(s.attendanceStatus);
+  NestAttendanceStatus? _statusFor(HalaqaStudent s) =>
+      _uiStatus[s.id] ?? parseNestAttendanceStatus(s.attendanceStatus);
 
   List<String> _dirtyIds() {
     final ids = <String>[];
     for (final s in _students) {
       final current = _uiStatus[s.id];
       final base = _editBaseline[s.id];
-      if (current != null && base != null && current != base) {
-        ids.add(s.id);
-      }
+      if (current != base) ids.add(s.id);
     }
     return ids;
   }
@@ -124,9 +120,19 @@ class _HalaqaDetailPageState extends ConsumerState<HalaqaDetailPage> {
   }
 
   Future<void> _openProgress(HalaqaStudent s) async {
-    context.push(
+    if (!canRecordDailyProgress(s.attendanceStatus)) {
+      if (!mounted) return;
+      setState(() => _tab = _DetailTab.attendance);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(dailyProgressBlockedMessage(s.attendanceStatus))),
+      );
+      return;
+    }
+    await context.push(
       '/student/${s.id}/progress?date=$_date&halaqaId=${widget.halaqaId}',
     );
+    if (!mounted) return;
+    await _reloadRoster(showSpinner: false);
   }
 
   Future<bool> _saveAttendance() async {
@@ -235,11 +241,13 @@ class _HalaqaDetailPageState extends ConsumerState<HalaqaDetailPage> {
   }
 
   /// Reload roster only (keep title) after a date change.
-  Future<void> _reloadRoster() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  Future<void> _reloadRoster({bool showSpinner = true}) async {
+    if (showSpinner) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     final repo = ref.read(homeRepositoryProvider);
     try {
       final students = await repo.getStudentsByHalqaId(
@@ -350,13 +358,13 @@ class _HalaqaDetailPageState extends ConsumerState<HalaqaDetailPage> {
                   onPickDate: _pickDate,
                 ),
                 const SizedBox(height: 6),
-                const Text(
-                  'أيام العمل أحد–خميس · يتخطى الجمعة/السبت والعطل',
+                Text(
+                  SchoolCalendar.weekdayNameArFromYmd(_date),
                   textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: AppColors.textMuted,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
+                  style: const TextStyle(
+                    color: AppColors.brand,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
                     height: 1.3,
                   ),
                 ),
@@ -561,8 +569,7 @@ class _TopBar extends StatelessWidget {
                 width: 36,
                 height: 36,
                 child: Icon(
-                  // In RTL, arrow_forward points toward the trailing edge (visual back).
-                  Icons.arrow_forward,
+                  Icons.arrow_back,
                   color: AppColors.brand,
                   size: 20,
                 ),
@@ -651,7 +658,7 @@ class _DateBar extends StatelessWidget {
       children: [
         // Prev (earlier) — first in RTL row sits on the visual right.
         _DateChevron(
-          icon: Icons.chevron_right,
+          icon: Icons.chevron_left,
           onTap: onPrev,
           tooltip: 'اليوم السابق',
         ),
@@ -696,7 +703,7 @@ class _DateBar extends StatelessWidget {
           ),
         ),
         _DateChevron(
-          icon: Icons.chevron_left,
+          icon: Icons.chevron_right,
           onTap: onNext,
           tooltip: 'اليوم التالي',
         ),
@@ -928,15 +935,15 @@ class _AttendanceCard extends StatelessWidget {
   });
 
   final HalaqaStudent student;
-  final NestAttendanceStatus status;
+  final NestAttendanceStatus? status;
   final bool editing;
   final ValueChanged<NestAttendanceStatus>? onSelect;
   final VoidCallback onOpenHub;
 
   @override
   Widget build(BuildContext context) {
-    final accent = status.accent;
-    final cardBg = status.cardBackground;
+    final accent = status?.accent ?? AppColors.textMuted;
+    final cardBg = status?.cardBackground ?? AppColors.parchment;
     return Material(
       key: ValueKey('roster-${student.id}'),
       color: cardBg,
@@ -1015,7 +1022,7 @@ class _AttendanceCard extends StatelessWidget {
                               border: Border.all(color: accent, width: 1.5),
                             ),
                             child: Text(
-                              status.labelAr,
+                              attendanceLabelAr(status),
                               style: TextStyle(
                                 color: accent,
                                 fontSize: 12,

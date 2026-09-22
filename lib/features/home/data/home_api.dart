@@ -73,15 +73,23 @@ class HomeApi {
     return _dio.put(ApiPaths.attendanceBulk, data: body);
   }
 
-  /// Nest: `GET study-plan/student/{studentId}?date=YYYY-MM-DD`.
+  /// Nest: `GET study-plan/student/{studentId}` — `date` optional.
+  /// With `date`, Nest 404s «سجل الحضور غير موجود» if that term-day has no attendance row.
   Future<Response<dynamic>> getStudentStudyPlan(
     String studentId, {
-    required String date,
+    String? date,
   }) {
     return _dio.get(
       '${ApiPaths.studyPlanStudent}$studentId',
-      queryParameters: {'date': date},
+      queryParameters: {
+        if (date != null && date.isNotEmpty) 'date': date,
+      },
     );
+  }
+
+  /// Nest: `GET /study-plan/{id}/students`.
+  Future<Response<dynamic>> getStudyPlanStudents(String planId) {
+    return _dio.get('${ApiPaths.studyPlanSlash}$planId/students');
   }
 
   /// Nest: `GET student-daily-progress/progress?studentId=&date=&studyPlanItemId=`.
@@ -137,5 +145,22 @@ class HomeApi {
 
   Future<Response<dynamic>> getQuranSurahs() {
     return _dio.get(ApiPaths.quranSurahs);
+  }
+
+  /// Nest: `GET reports/progress?halqaId=&startingDate=&endingDate=`.
+  /// Omit `period` so Nest uses the given dates (period overwrites them).
+  Future<Response<dynamic>> getProgressReport({
+    required String halaqaId,
+    required String startingDate,
+    required String endingDate,
+  }) {
+    return _dio.get(
+      ApiPaths.reportsProgress,
+      queryParameters: {
+        'halqaId': halaqaId,
+        'startingDate': startingDate,
+        'endingDate': endingDate,
+      },
+    );
   }
 }

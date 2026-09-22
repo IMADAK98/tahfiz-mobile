@@ -116,7 +116,7 @@ class _StudentAttendancePageState
       setState(() {
         _student = match;
         _serverStatus = match?.attendanceStatus;
-        _selected = displayAttendanceStatus(match?.attendanceStatus);
+        _selected = parseNestAttendanceStatus(match?.attendanceStatus);
         if (name != null && name.isNotEmpty) {
           _title = name;
         }
@@ -155,7 +155,7 @@ class _StudentAttendancePageState
       setState(() {
         _student = match;
         _serverStatus = match?.attendanceStatus;
-        _selected = displayAttendanceStatus(match?.attendanceStatus);
+        _selected = parseNestAttendanceStatus(match?.attendanceStatus);
         _loading = false;
         _error = match == null ? 'الطالب غير موجود في هذه الحلقة' : null;
       });
@@ -399,7 +399,7 @@ class _TopBar extends StatelessWidget {
                 width: 36,
                 height: 36,
                 child: Icon(
-                  Icons.arrow_forward,
+                  Icons.arrow_back,
                   color: AppColors.brand,
                   size: 20,
                 ),

@@ -27,6 +27,40 @@ class HomeException implements Exception {
   String toString() => message;
 }
 
+/// Nest 409 progress gate: unmarked vs absent/excused.
+class ProgressAttendanceException extends HomeException {
+  ProgressAttendanceException(
+    super.message, {
+    required this.code,
+    this.attendanceStatus,
+  });
+
+  final String code;
+  final String? attendanceStatus;
+
+  static ProgressAttendanceException? tryParse(DioException e) {
+    if (e.response?.statusCode != 409) return null;
+    final data = e.response?.data;
+    if (data is! Map) return null;
+    final code = data['code']?.toString();
+    if (code != 'ATTENDANCE_REQUIRED' &&
+        code != 'ATTENDANCE_BLOCKS_PROGRESS') {
+      return null;
+    }
+    return ProgressAttendanceException(
+      nestErrorMessage(e),
+      code: code!,
+      attendanceStatus: data['attendanceStatus']?.toString(),
+    );
+  }
+}
+
+Never _throwHome(DioException e) {
+  final gate = ProgressAttendanceException.tryParse(e);
+  if (gate != null) throw gate;
+  throw HomeException(nestErrorMessage(e));
+}
+
 class HomeRepository {
   HomeRepository({required this.api, required this.storage});
 
@@ -66,17 +100,48 @@ class HomeRepository {
 
   /// Students roster for a ḥalaqa on [date] (YYYY-MM-DD).
   /// 404 / empty body → empty list (never crash).
+  ///
+  /// Roster `*_percentage` is that term-day only. Overlay
+  /// `GET /reports/progress` term-start→[date] so chips stay non-zero
+  /// after progress on earlier school days.
   Future<List<HalaqaStudent>> getStudentsByHalqaId({
     required String halaqaId,
     required String date,
   }) async {
     try {
       final res = await api.getStudentsByHalqaId(halaqaId, date: date);
-      return _parseStudentList(res.data);
+      final students = _parseStudentList(res.data);
+      return await _overlayTermProgress(
+        halaqaId: halaqaId,
+        date: date,
+        students: students,
+        rosterRaw: res.data,
+      );
     } on DioException catch (e) {
       final code = e.response?.statusCode;
       if (code == 404) return const [];
       throw HomeException(nestErrorMessage(e));
+    }
+  }
+
+  Future<List<HalaqaStudent>> _overlayTermProgress({
+    required String halaqaId,
+    required String date,
+    required List<HalaqaStudent> students,
+    required dynamic rosterRaw,
+  }) async {
+    if (students.isEmpty) return students;
+    final start = _termStartYmdFromRoster(rosterRaw) ?? date;
+    try {
+      final res = await api.getProgressReport(
+        halaqaId: halaqaId,
+        startingDate: start,
+        endingDate: date,
+      );
+      return mergeReportPercents(students, res.data);
+    } catch (_) {
+      // ponytail: report is additive chrome; roster still usable without it.
+      return students;
     }
   }
 
@@ -259,10 +324,11 @@ class HomeRepository {
   }
 
   /// Nest: `GET study-plan/student/{id}?date=` — plan items for the day.
-  /// Empty list = unbound (no study plan).
+  /// Empty list = unbound (no study plan). Attendance is not a 404 here.
   Future<List<StudyPlanItemRef>> getStudentStudyPlan({
     required String studentId,
     required String date,
+    String? halaqaId,
   }) async {
     try {
       final res = await api.getStudentStudyPlan(studentId, date: date);
@@ -292,7 +358,7 @@ class HomeRepository {
       );
       return _parseDailyProgress(res.data);
     } on DioException catch (e) {
-      throw HomeException(nestErrorMessage(e));
+      _throwHome(e);
     }
   }
 
@@ -356,19 +422,19 @@ class HomeRepository {
         await api.createDailyProgress(body);
       }
     } on DioException catch (e) {
-      // Retry opposite verb on conflict / already-exists style errors.
+      final gate = ProgressAttendanceException.tryParse(e);
+      if (gate != null) throw gate;
       final code = e.response?.statusCode;
       if (code == 400 || code == 409) {
         try {
           if (existingProgressId != null && existingProgressId > 0) {
             await api.createDailyProgress(body);
           } else {
-            // Without id we cannot PUT; surface original error.
             throw HomeException(nestErrorMessage(e));
           }
           return;
         } on DioException catch (e2) {
-          throw HomeException(nestErrorMessage(e2));
+          _throwHome(e2);
         }
       }
       throw HomeException(nestErrorMessage(e));
@@ -404,7 +470,7 @@ class HomeRepository {
     try {
       await api.createMurajaaProgress(body);
     } on DioException catch (e) {
-      throw HomeException(nestErrorMessage(e));
+      _throwHome(e);
     }
   }
 
@@ -563,6 +629,76 @@ class HomeRepository {
     }
     // Drop rows without id
     return out.where((s) => s.id.isNotEmpty).toList(growable: false);
+  }
+
+  /// Test seam: overlay `/reports/progress` totals onto roster rows.
+  static List<HalaqaStudent> mergeReportPercents(
+    List<HalaqaStudent> students,
+    dynamic reportRaw,
+  ) {
+    final byId = _parseProgressReportPercents(reportRaw);
+    if (byId.isEmpty) return students;
+    return [
+      for (final s in students)
+        byId.containsKey(s.id)
+            ? s.copyWith(
+                hifzPercent: byId[s.id]!.$1,
+                tathbeetPercent: byId[s.id]!.$2,
+                murajaaPercent: byId[s.id]!.$3,
+              )
+            : s,
+    ];
+  }
+
+  static Map<String, (double, double, double)> _parseProgressReportPercents(
+    dynamic raw,
+  ) {
+    dynamic root = raw;
+    if (raw is Map) {
+      final map = Map<String, dynamic>.from(raw);
+      root = map['data'] ?? map;
+    }
+    if (root is! Map) return const {};
+    final data = Map<String, dynamic>.from(root);
+    final list = data['students'];
+    if (list is! List) return const {};
+
+    final out = <String, (double, double, double)>{};
+    for (final item in list) {
+      if (item is! Map) continue;
+      final map = Map<String, dynamic>.from(item);
+      final parsed = HalaqaStudent.fromJson(map);
+      if (parsed.id.isEmpty) continue;
+      out[parsed.id] = (
+        parsed.hifzPercent,
+        parsed.tathbeetPercent,
+        parsed.murajaaPercent,
+      );
+    }
+    return out;
+  }
+
+  static String? _termStartYmdFromRoster(dynamic raw) {
+    dynamic list = raw;
+    if (raw is Map) {
+      final map = Map<String, dynamic>.from(raw);
+      list = map['data'] ?? map['students'] ?? map['items'];
+      if (list is Map) {
+        final inner = Map<String, dynamic>.from(list);
+        list = inner['students'] ?? inner['items'] ?? inner['data'];
+      }
+    }
+    if (list is! List) return null;
+    for (final item in list) {
+      if (item is! Map) continue;
+      final map = Map<String, dynamic>.from(item);
+      final term = map['term'];
+      if (term is! Map) continue;
+      final start = term['startDate'] ?? term['start_date'];
+      final d = SchoolCalendar.parseYmd(start?.toString());
+      if (d != null) return SchoolCalendar.toYmd(d);
+    }
+    return null;
   }
 
   static List<Map<String, dynamic>> _parseMapList(dynamic raw) {
