@@ -10,6 +10,7 @@ import 'package:thafiz_teacher/core/theme/app_theme.dart';
 import 'package:thafiz_teacher/features/halaqa/data/dto/halaqa_student.dart';
 import 'package:thafiz_teacher/features/halaqa/data/dto/halaqa_study_plan.dart';
 import 'package:thafiz_teacher/features/halaqa/presentation/halaqa_detail_page.dart';
+import 'package:thafiz_teacher/features/halaqa/presentation/halaqa_plans_create_page.dart';
 import 'package:thafiz_teacher/features/halaqa/presentation/halaqa_plans_page.dart';
 import 'package:thafiz_teacher/features/home/data/dto/progress_models.dart';
 import 'package:thafiz_teacher/features/home/data/home_api.dart';
@@ -316,5 +317,139 @@ void main() {
     await tester.tap(find.text('تأكيد حذف'));
     await tester.pumpAndSettle();
     expect(repo.deletedPlanId, 9);
+  });
+
+  test('two HIFZ items cannot be saved', () {
+    expect(
+      duplicatePlanItemTypeError(const [PlanItemType.hifz, PlanItemType.hifz]),
+      kDuplicatePlanItemTypeError,
+    );
+    expect(
+      duplicatePlanItemTypeError(const [
+        PlanItemType.hifz,
+        PlanItemType.tathbeet,
+        PlanItemType.murajaa,
+      ]),
+      isNull,
+    );
+    expect(
+      nextUnusedPlanItemType(const [PlanItemType.hifz]),
+      PlanItemType.tathbeet,
+    );
+    expect(nextUnusedPlanItemType(PlanItemType.values), isNull);
+  });
+
+  Future<void> pumpCreate(
+    WidgetTester tester,
+    _FakeHomeRepo repo, {
+    List<PlanItemType>? initialItemTypes,
+  }) async {
+    tester.view.physicalSize = const Size(800, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final router = GoRouter(
+      initialLocation: '/halaqa/1/plans/create',
+      routes: [
+        GoRoute(
+          path: '/halaqa/:id/plans',
+          builder: (_, _) => const Scaffold(body: Text('plans-list')),
+          routes: [
+            GoRoute(
+              path: 'create',
+              builder: (_, state) => HalaqaPlansCreatePage(
+                halaqaId: state.pathParameters['id'] ?? '1',
+                halaqaName: 'حلقة الفجر',
+                studentCount: 4,
+                initialItemTypes: initialItemTypes,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          homeRepositoryProvider.overrideWith((ref) => repo),
+        ],
+        child: MaterialApp.router(
+          theme: AppTheme.light(),
+          routerConfig: router,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('add item uses an unused type and save omits a second HIFZ',
+      (tester) async {
+    final repo = _FakeHomeRepo(students: sampleStudents());
+    await pumpCreate(tester, repo);
+
+    await tester.enterText(find.byKey(const Key('plan-name-field')), 'خطة');
+    await tester.ensureVisible(find.byKey(const Key('plan-add-item')));
+    await tester.tap(find.byKey(const Key('plan-add-item')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('عنصر 2'), findsOneWidget);
+    final secondHifz = tester.widget<InkWell>(
+      find.descendant(
+        of: find.byKey(const Key('plan-item-1-type-HIFZ')),
+        matching: find.byType(InkWell),
+      ),
+    );
+    expect(secondHifz.onTap, isNull);
+
+    await tester.ensureVisible(find.byKey(const Key('plan-item-1-type-HIFZ')));
+    await tester.tap(find.byKey(const Key('plan-item-1-type-HIFZ')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('plan-save-btn')));
+    await tester.pumpAndSettle();
+
+    final items =
+        repo.lastCreateBody!['studyPlanItems'] as List<Map<String, dynamic>>;
+    expect(items.map((item) => item['type']), ['HIFZ', 'TATHBEET']);
+    expect(items.first.containsKey('toSurah'), isFalse);
+    expect(items.first.containsKey('toAyah'), isFalse);
+    expect(find.text(kDuplicatePlanItemTypeError), findsNothing);
+  });
+
+  testWidgets('duplicate HIFZ draft blocks save', (tester) async {
+    final repo = _FakeHomeRepo(students: sampleStudents());
+    await pumpCreate(
+      tester,
+      repo,
+      initialItemTypes: const [PlanItemType.hifz, PlanItemType.hifz],
+    );
+
+    await tester.enterText(find.byKey(const Key('plan-name-field')), 'خطة');
+    await tester.tap(find.byKey(const Key('plan-save-btn')));
+    await tester.pumpAndSettle();
+
+    expect(find.text(kDuplicatePlanItemTypeError), findsOneWidget);
+    expect(repo.lastCreateBody, isNull);
+  });
+
+  testWidgets('add item stops at one of each type', (tester) async {
+    final repo = _FakeHomeRepo(students: sampleStudents());
+    await pumpCreate(tester, repo);
+
+    for (var i = 0; i < 3; i++) {
+      await tester.ensureVisible(find.byKey(const Key('plan-add-item')));
+      await tester.tap(find.byKey(const Key('plan-add-item')));
+      await tester.pumpAndSettle();
+    }
+
+    expect(find.text('عنصر 3'), findsOneWidget);
+    expect(find.text('عنصر 4'), findsNothing);
+    expect(find.text('+ إضافة عنصر'), findsOneWidget);
+    final add = tester.widget<OutlinedButton>(
+      find.byKey(const Key('plan-add-item')),
+    );
+    expect(add.onPressed, isNull);
   });
 }
