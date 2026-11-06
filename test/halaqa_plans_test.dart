@@ -15,6 +15,7 @@ import 'package:thafiz_teacher/features/halaqa/presentation/halaqa_plans_page.da
 import 'package:thafiz_teacher/features/home/data/dto/progress_models.dart';
 import 'package:thafiz_teacher/features/home/data/home_api.dart';
 import 'package:thafiz_teacher/features/home/data/home_repository.dart';
+import 'package:thafiz_teacher/shared/widgets/thafiz_toast.dart';
 
 class _FakeHomeRepo extends HomeRepository {
   _FakeHomeRepo({
@@ -168,6 +169,8 @@ void main() {
       envString: 'API_BASE_URL=https://tahfiz.onrender.com/',
     );
   });
+
+  tearDown(ThafizToast.dismiss);
 
   test('HalaqaStudyPlan.fromJson parses list payload', () {
     final plan = HalaqaStudyPlan.fromJson({

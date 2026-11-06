@@ -10,6 +10,7 @@ import 'package:thafiz_teacher/features/halaqa/data/dto/halaqa_study_plan.dart';
 import 'package:thafiz_teacher/features/halaqa/presentation/halaqa_detail_page.dart';
 import 'package:thafiz_teacher/features/home/data/home_api.dart';
 import 'package:thafiz_teacher/features/home/data/home_repository.dart';
+import 'package:thafiz_teacher/shared/widgets/thafiz_toast.dart';
 
 class _SaveCall {
   const _SaveCall({
@@ -32,6 +33,7 @@ class _FakeHomeRepo extends HomeRepository {
 
   List<HalaqaStudent> students;
   final saves = <_SaveCall>[];
+  Object? saveError;
 
   @override
   Future<Set<String>> getHolidayDatesForHalqa(String halaqaId) async => {};
@@ -58,6 +60,7 @@ class _FakeHomeRepo extends HomeRepository {
     required String status,
     String? previousStatus,
   }) async {
+    if (saveError != null) throw saveError!;
     saves.add(
       _SaveCall(
         studentUserId: studentUserId,
@@ -74,6 +77,8 @@ void main() {
   setUpAll(() {
     FlutterSecureStorage.setMockInitialValues({});
   });
+
+  tearDown(ThafizToast.dismiss);
 
   Future<void> pumpRoster(
     WidgetTester tester,
@@ -147,6 +152,13 @@ void main() {
     expect(repo.saves.single.studentUserId, '15');
     expect(repo.saves.single.status, 'ABSENT');
     expect(repo.saves.single.previousStatus, 'NOT_MARKED');
+    expect(find.text('تم تحديث الحضور'), findsOneWidget);
+    final card = tester.widget<ThafizToastCard>(find.byType(ThafizToastCard));
+    expect(card.kind, ThafizToastKind.info);
+    final toast = tester.getRect(find.byType(ThafizToastCard));
+    final save = tester.getRect(find.widgetWithText(FilledButton, 'تعديل الحضور'));
+    expect(toast.bottom, lessThanOrEqualTo(save.top));
+    expect(find.byType(SnackBar), findsNothing);
   });
 
   testWidgets('LATE displays متأخر; saving معذور sends LEAVE', (tester) async {
@@ -287,5 +299,113 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('PROGRESS_OPEN'), findsOneWidget);
     expect(find.text('HUB_OPEN'), findsNothing);
+  });
+
+  testWidgets('حفظ الحضور with no edits does not toast', (tester) async {
+    final repo = _FakeHomeRepo([
+      const HalaqaStudent(
+        id: '15',
+        name: 'أحمد',
+        attendanceStatus: 'NOT_MARKED',
+      ),
+    ]);
+    await pumpRoster(tester, repo);
+
+    await tester.tap(find.text('تعديل الحضور'));
+    await tester.pump();
+    await tester.tap(find.text('حفظ الحضور'));
+    await tester.pump();
+    await tester.pump();
+
+    expect(repo.saves, isEmpty);
+    expect(find.byType(ThafizToastCard), findsNothing);
+    expect(find.text('تم تحديث الحضور'), findsNothing);
+    expect(find.text('تعديل الحضور'), findsOneWidget);
+  });
+
+  testWidgets('failed attendance save shows the error and not تم تحديث الحضور',
+      (tester) async {
+    final repo = _FakeHomeRepo([
+      const HalaqaStudent(
+        id: '15',
+        name: 'أحمد',
+        attendanceStatus: 'NOT_MARKED',
+      ),
+    ])
+      ..saveError = HomeException('تعذر حفظ الحضور');
+    await pumpRoster(tester, repo);
+
+    await tester.tap(find.text('تعديل الحضور'));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('att-chip-15-ABSENT')));
+    await tester.pump();
+    await tester.tap(find.text('حفظ الحضور'));
+    await tester.pump();
+    await tester.pump();
+
+    expect(repo.saves, isEmpty);
+    expect(find.text('تم تحديث الحضور'), findsNothing);
+    expect(find.text('تعذر حفظ الحضور'), findsOneWidget);
+    final card = tester.widget<ThafizToastCard>(find.byType(ThafizToastCard));
+    expect(card.kind, ThafizToastKind.error);
+    expect(find.text('حفظ الحضور'), findsOneWidget);
+    final toast = tester.getRect(find.byType(ThafizToastCard));
+    final save = tester.getRect(find.widgetWithText(FilledButton, 'حفظ الحضور'));
+    expect(toast.bottom, lessThanOrEqualTo(save.top));
+  });
+
+  testWidgets('unmarked تسجيل تقدّم shows the blocker toast and does not open progress',
+      (tester) async {
+    final repo = _FakeHomeRepo([
+      const HalaqaStudent(
+        id: '15',
+        name: 'أحمد',
+        attendanceStatus: 'NOT_MARKED',
+      ),
+    ]);
+    final router = GoRouter(
+      initialLocation: '/halaqa/7',
+      routes: [
+        GoRoute(
+          path: '/halaqa/:id',
+          builder: (_, state) => HalaqaDetailPage(
+            halaqaId: state.pathParameters['id'] ?? '',
+          ),
+        ),
+        GoRoute(
+          path: '/student/:id/progress',
+          builder: (_, _) => const Scaffold(body: Text('PROGRESS_OPEN')),
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          homeRepositoryProvider.overrideWith((ref) => repo),
+        ],
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(find.byKey(const Key('halaqa-tab-progress')));
+    await tester.pump();
+    await tester.tap(find.text('تسجيل تقدّم'));
+    await tester.pump();
+
+    expect(find.text('PROGRESS_OPEN'), findsNothing);
+    expect(find.text('سجّل الحضور أولاً قبل تسجيل التقدّم'), findsOneWidget);
+    expect(
+      tester.widget<ThafizToastCard>(find.byType(ThafizToastCard)).kind,
+      ThafizToastKind.error,
+    );
+    expect(find.text('تعديل الحضور'), findsOneWidget);
+    expect(repo.saves, isEmpty);
+    final toast = tester.getRect(find.byType(ThafizToastCard));
+    final save = tester.getRect(find.widgetWithText(FilledButton, 'تعديل الحضور'));
+    expect(toast.bottom, lessThanOrEqualTo(save.top));
   });
 }

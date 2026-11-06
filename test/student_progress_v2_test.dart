@@ -9,12 +9,14 @@ import 'package:thafiz_teacher/features/home/data/dto/progress_models.dart';
 import 'package:thafiz_teacher/features/home/data/home_api.dart';
 import 'package:thafiz_teacher/features/home/data/home_repository.dart';
 import 'package:thafiz_teacher/features/student/presentation/student_progress_page.dart';
+import 'package:thafiz_teacher/shared/widgets/thafiz_toast.dart';
 
 class _FakeProgressRepo extends HomeRepository {
   _FakeProgressRepo({
     required this.students,
     required this.items,
     this.saved = false,
+    this.saveError,
   }) : super(
           api: HomeApi(Dio()),
           storage: SecureStorageService(const FlutterSecureStorage()),
@@ -23,6 +25,7 @@ class _FakeProgressRepo extends HomeRepository {
   List<HalaqaStudent> students;
   List<StudyPlanItemRef> items;
   bool saved;
+  Object? saveError;
   var saveCalls = 0;
   var progressLoads = 0;
 
@@ -84,6 +87,7 @@ class _FakeProgressRepo extends HomeRepository {
     int? existingProgressId,
   }) async {
     saveCalls++;
+    if (saveError != null) throw saveError!;
     saved = true;
   }
 }
@@ -94,6 +98,8 @@ void main() {
   setUpAll(() {
     FlutterSecureStorage.setMockInitialValues({});
   });
+
+  tearDown(ThafizToast.dismiss);
 
   group('DailyProgressSnapshot.fromJson', () {
     test('Nest suggestion (isProgress false + INCOMPLETE + old id) is not saved today',
@@ -243,7 +249,56 @@ void main() {
     await tester.pump(const Duration(milliseconds: 50));
 
     expect(repo.saveCalls, 1);
-    expect(find.text('تم حفظ التقدّم'), findsOneWidget);
+    expect(find.byType(SnackBar), findsNothing);
+    final card = tester.widget<ThafizToastCard>(find.byType(ThafizToastCard));
+    expect(card.kind, ThafizToastKind.success);
+    expect(card.message, 'تم حفظ التقدّم');
+    final toast = tester.getRect(find.byType(ThafizToastCard));
+    final save = tester.getRect(find.widgetWithText(FilledButton, 'حفظ التقدّم'));
+    expect(toast.bottom, lessThanOrEqualTo(save.top));
     expect(find.text('تم اليوم'), findsOneWidget);
+  });
+
+  testWidgets('failed progress save keeps the inline error and skips success',
+      (tester) async {
+    final repo = _FakeProgressRepo(
+      students: const [student],
+      items: const [hifzItem],
+      saveError: HomeException('تعذر الحفظ من الخادم'),
+    );
+    await pumpPage(tester, repo);
+
+    await tester.tap(find.text('حفظ التقدّم'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(repo.saveCalls, 1);
+    expect(find.text('تعذر الحفظ من الخادم'), findsOneWidget);
+    expect(find.text('تم حفظ التقدّم'), findsNothing);
+    expect(find.byType(ThafizToastCard), findsNothing);
+    expect(find.text('حفظ التقدّم'), findsOneWidget);
+  });
+
+  testWidgets('attendance 409 does not show a success toast', (tester) async {
+    final repo = _FakeProgressRepo(
+      students: const [student],
+      items: const [hifzItem],
+      saveError: ProgressAttendanceException(
+        'blocked',
+        code: 'ATTENDANCE_REQUIRED',
+        attendanceStatus: 'NOT_MARKED',
+      ),
+    );
+    await pumpPage(tester, repo);
+
+    await tester.tap(find.text('حفظ التقدّم'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(repo.saveCalls, 1);
+    expect(find.text('تم حفظ التقدّم'), findsNothing);
+    expect(find.byType(ThafizToastCard), findsNothing);
+    expect(find.text('سجّل الحضور أولاً قبل تسجيل التقدّم'), findsOneWidget);
+    expect(find.text('تعيين / ربط خطة دراسية'), findsNothing);
   });
 }

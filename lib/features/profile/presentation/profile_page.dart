@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/brand_mark.dart';
 import '../../../shared/widgets/primary_button.dart';
+import '../../../shared/widgets/thafiz_toast.dart';
 import '../../auth/data/auth_repository.dart';
 
 /// Profile / edit-profile stub.
@@ -70,8 +71,10 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                 leading: const Icon(Icons.edit, color: AppColors.brand),
                 title: const Text('تعديل الملف الشخصي'),
                 onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('تعديل الملف — قريباً')),
+                  ThafizToast.show(
+                    context,
+                    message: 'تعديل الملف — قريباً',
+                    kind: ThafizToastKind.info,
                   );
                 },
               ),

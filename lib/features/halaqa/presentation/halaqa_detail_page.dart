@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/util/school_calendar.dart';
+import '../../../shared/widgets/thafiz_toast.dart';
 import '../../home/data/home_repository.dart';
 import '../data/attendance_status.dart';
 import '../data/dto/halaqa_student.dart';
@@ -114,8 +115,10 @@ class _HalaqaDetailPageState extends ConsumerState<HalaqaDetailPage> {
     if (!canRecordDailyProgress(s.attendanceStatus)) {
       if (!mounted) return;
       setState(() => _tab = _DetailTab.attendance);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(dailyProgressBlockedMessage(s.attendanceStatus))),
+      ThafizToast.show(
+        context,
+        message: dailyProgressBlockedMessage(s.attendanceStatus),
+        kind: ThafizToastKind.error,
       );
       return;
     }
@@ -141,6 +144,7 @@ class _HalaqaDetailPageState extends ConsumerState<HalaqaDetailPage> {
 
     setState(() => _saving = true);
     final repo = ref.read(homeRepositoryProvider);
+    var committed = false;
     try {
       for (final id in dirty) {
         final next = _uiStatus[id];
@@ -154,6 +158,7 @@ class _HalaqaDetailPageState extends ConsumerState<HalaqaDetailPage> {
           previousStatus: prev,
         );
         _serverStatus[id] = next.apiValue;
+        committed = true;
       }
       if (!mounted) return false;
       setState(() {
@@ -162,13 +167,23 @@ class _HalaqaDetailPageState extends ConsumerState<HalaqaDetailPage> {
         _editBaseline.clear();
       });
       await _reloadRoster();
+      if (!mounted) return false;
+      if (committed) {
+        ThafizToast.show(
+          context,
+          message: 'تم تحديث الحضور',
+          kind: ThafizToastKind.info,
+        );
+      }
       return true;
     } catch (e) {
       if (!mounted) return false;
       setState(() => _saving = false);
       final msg = e is HomeException ? e.message : e.toString();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(msg.isEmpty ? 'تعذر حفظ الحضور' : msg)),
+      ThafizToast.show(
+        context,
+        message: msg.isEmpty ? 'تعذر حفظ الحضور' : msg,
+        kind: ThafizToastKind.error,
       );
       return false;
     }
