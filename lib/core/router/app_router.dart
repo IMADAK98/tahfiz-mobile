@@ -11,7 +11,6 @@ import '../../features/halaqa/presentation/halaqa_plans_create_page.dart';
 import '../../features/halaqa/presentation/halaqa_plans_page.dart';
 import '../../features/home/presentation/bottom_nav_page.dart';
 import '../../features/student/presentation/student_attendance_page.dart';
-import '../../features/student/presentation/student_page.dart';
 import '../../features/student/presentation/student_progress_page.dart';
 import '../storage/secure_storage_service.dart';
 
@@ -160,45 +159,30 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         ],
       ),
       GoRoute(
-        path: '/student/:id',
-        name: 'student',
+        path: '/student/:id/attendance',
+        name: 'studentAttendance',
         builder: (context, state) {
           final id = state.pathParameters['id'] ?? '';
           final ctx = _dateHalaqaFrom(state);
-          return StudentPage(
+          return StudentAttendancePage(
             studentId: id,
             date: ctx.date,
             halaqaId: ctx.halaqaId,
           );
         },
-        routes: [
-          GoRoute(
-            path: 'attendance',
-            name: 'studentAttendance',
-            builder: (context, state) {
-              final id = state.pathParameters['id'] ?? '';
-              final ctx = _dateHalaqaFrom(state);
-              return StudentAttendancePage(
-                studentId: id,
-                date: ctx.date,
-                halaqaId: ctx.halaqaId,
-              );
-            },
-          ),
-          GoRoute(
-            path: 'progress',
-            name: 'studentProgress',
-            builder: (context, state) {
-              final id = state.pathParameters['id'] ?? '';
-              final ctx = _dateHalaqaFrom(state);
-              return StudentProgressPage(
-                studentId: id,
-                date: ctx.date,
-                halaqaId: ctx.halaqaId,
-              );
-            },
-          ),
-        ],
+      ),
+      GoRoute(
+        path: '/student/:id/progress',
+        name: 'studentProgress',
+        builder: (context, state) {
+          final id = state.pathParameters['id'] ?? '';
+          final ctx = _dateHalaqaFrom(state);
+          return StudentProgressPage(
+            studentId: id,
+            date: ctx.date,
+            halaqaId: ctx.halaqaId,
+          );
+        },
       ),
     ],
     errorBuilder: (context, state) => Scaffold(

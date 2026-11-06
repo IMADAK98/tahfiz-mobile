@@ -110,17 +110,6 @@ class _HalaqaDetailPageState extends ConsumerState<HalaqaDetailPage> {
     });
   }
 
-  Future<void> _openStudentHub(HalaqaStudent s) async {
-    if (_editing && _dirtyIds().isNotEmpty) {
-      final ok = await _saveAttendance();
-      if (!ok) return;
-    }
-    if (!mounted) return;
-    context.push(
-      '/student/${s.id}?date=$_date&halaqaId=${widget.halaqaId}',
-    );
-  }
-
   Future<void> _openProgress(HalaqaStudent s) async {
     if (!canRecordDailyProgress(s.attendanceStatus)) {
       if (!mounted) return;
@@ -498,7 +487,6 @@ class _HalaqaDetailPageState extends ConsumerState<HalaqaDetailPage> {
           onSelect: _editing
               ? (next) => setState(() => _uiStatus[s.id] = next)
               : null,
-          onOpenHub: () => _openStudentHub(s),
         );
       },
     );
@@ -968,7 +956,6 @@ class _AttendanceCard extends StatelessWidget {
     required this.student,
     required this.status,
     required this.editing,
-    required this.onOpenHub,
     this.onSelect,
   });
 
@@ -976,7 +963,6 @@ class _AttendanceCard extends StatelessWidget {
   final NestAttendanceStatus? status;
   final bool editing;
   final ValueChanged<NestAttendanceStatus>? onSelect;
-  final VoidCallback onOpenHub;
 
   @override
   Widget build(BuildContext context) {
@@ -1070,22 +1056,6 @@ class _AttendanceCard extends StatelessWidget {
                           ),
                         ),
                     ],
-                  ),
-                ),
-              ),
-              InkWell(
-                onTap: onOpenHub,
-                borderRadius: BorderRadius.circular(8),
-                child: const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 4),
-                  child: SizedBox(
-                    width: 28,
-                    height: 28,
-                    child: Icon(
-                      Icons.chevron_left,
-                      color: AppColors.textMuted,
-                      size: 22,
-                    ),
                   ),
                 ),
               ),
