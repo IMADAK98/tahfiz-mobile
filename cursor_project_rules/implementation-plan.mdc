@@ -66,6 +66,13 @@ Done
 
 Removed the roster chevron and the `/student/:id` hub page. «تعديل الحضور» and `/student/:id/progress` stay.
 
+## Teacher toasts — Direction A (soft parchment float)
+
+Done
+
+`ThafizToast` replaces Material snackbars for teacher transient feedback. Direction B was not built.
+Success and attendance info show only after the save API returns. Inline Nest errors stay.
+
 ## Cancelled (do not resume unless Imad asks)
 
 Multi-state attendance toggle POC — pack cancelled it.

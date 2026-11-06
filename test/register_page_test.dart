@@ -11,6 +11,7 @@ import 'package:thafiz_teacher/features/auth/data/auth_repository.dart';
 import 'package:thafiz_teacher/features/auth/data/dto/center_option.dart';
 import 'package:thafiz_teacher/features/auth/data/dto/create_pending_teacher_request.dart';
 import 'package:thafiz_teacher/features/auth/presentation/register_page.dart';
+import 'package:thafiz_teacher/shared/widgets/thafiz_toast.dart';
 
 class _FakeAuthRepository extends AuthRepository {
   _FakeAuthRepository()
@@ -45,6 +46,8 @@ void main() {
       envString: 'API_BASE_URL=https://tahfiz.onrender.com/',
     );
   });
+
+  tearDown(ThafizToast.dismiss);
 
   Future<void> pumpRegister(
     WidgetTester tester,

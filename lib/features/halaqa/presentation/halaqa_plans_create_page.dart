@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../shared/widgets/thafiz_toast.dart';
 import '../../home/data/dto/progress_models.dart';
 import '../../home/data/home_repository.dart';
 import 'plans_chrome.dart';
@@ -192,8 +193,10 @@ class _HalaqaPlansCreatePageState extends ConsumerState<HalaqaPlansCreatePage> {
             studyPlanItems: bodies,
           );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تم حفظ الخطة')),
+      ThafizToast.show(
+        context,
+        message: 'تم حفظ الخطة',
+        kind: ThafizToastKind.success,
       );
       context.pop(true);
     } catch (e) {

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/primary_button.dart';
+import '../../../shared/widgets/thafiz_toast.dart';
 import '../data/auth_repository.dart';
 
 /// Login screen matching locked mock `design/mobile/login.html`.
@@ -46,11 +47,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       if (!mounted) return;
       final message = nestErrorMessage(e);
       setState(() => _error = message);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(message, textDirection: TextDirection.rtl),
-          backgroundColor: AppColors.brand,
-        ),
+      ThafizToast.show(
+        context,
+        message: message,
+        kind: ThafizToastKind.error,
       );
     } finally {
       if (mounted) setState(() => _loading = false);

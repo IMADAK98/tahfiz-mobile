@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/util/school_calendar.dart';
+import '../../../shared/widgets/thafiz_toast.dart';
 import '../../halaqa/data/attendance_status.dart';
 import '../../halaqa/data/dto/halaqa_student.dart';
 import '../../home/data/home_repository.dart';
@@ -214,15 +215,19 @@ class _StudentAttendancePageState
 
   Future<void> _save() async {
     if (!_hasHalaqaContext) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('افتح من الحلقة')),
+      ThafizToast.show(
+        context,
+        message: 'افتح من الحلقة',
+        kind: ThafizToastKind.error,
       );
       return;
     }
     final selected = _selected;
     if (selected == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('اختر حالة الحضور')),
+      ThafizToast.show(
+        context,
+        message: 'اختر حالة الحضور',
+        kind: ThafizToastKind.error,
       );
       return;
     }
@@ -241,15 +246,19 @@ class _StudentAttendancePageState
         _serverStatus = selected.apiValue;
         _saving = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('تم حفظ ${selected.labelAr}')),
+      ThafizToast.show(
+        context,
+        message: 'تم حفظ الحضور',
+        kind: ThafizToastKind.success,
       );
     } catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
       final msg = e is HomeException ? e.message : e.toString();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(msg)),
+      ThafizToast.show(
+        context,
+        message: msg,
+        kind: ThafizToastKind.error,
       );
     }
   }

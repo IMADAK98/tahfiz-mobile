@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/util/school_calendar.dart';
+import '../../../shared/widgets/thafiz_toast.dart';
 import '../../home/data/home_repository.dart';
 import '../data/dto/halaqa_student.dart';
 import 'plans_chrome.dart';
@@ -101,8 +102,10 @@ class _HalaqaPlansAssignPageState extends ConsumerState<HalaqaPlansAssignPage> {
             studentIds: ids,
           );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تم تعيين الطلاب')),
+      ThafizToast.show(
+        context,
+        message: 'تم تعيين الطلاب',
+        kind: ThafizToastKind.success,
       );
       context.pop(true);
     } catch (e) {

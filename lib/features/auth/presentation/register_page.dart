@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/primary_button.dart';
+import '../../../shared/widgets/thafiz_toast.dart';
 import '../data/auth_repository.dart';
 import '../data/dto/center_option.dart';
 import '../data/dto/create_pending_teacher_request.dart';
@@ -200,14 +201,10 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
             _toDto(),
           );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'تم إرسال طلب التسجيل بنجاح. سيتم مراجعته.',
-            textDirection: TextDirection.rtl,
-          ),
-          backgroundColor: AppColors.brand,
-        ),
+      ThafizToast.show(
+        context,
+        message: 'تم إرسال طلب التسجيل بنجاح. سيتم مراجعته.',
+        kind: ThafizToastKind.success,
       );
       context.go('/login');
     } catch (e) {

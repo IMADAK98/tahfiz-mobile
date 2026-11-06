@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../shared/widgets/thafiz_toast.dart';
 import '../../home/data/dto/progress_models.dart';
 import '../../home/data/home_repository.dart';
 import '../data/dto/halaqa_study_plan.dart';
@@ -128,12 +129,10 @@ class _HalaqaPlansPageState extends ConsumerState<HalaqaPlansPage> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _loadingDetails.remove(planId));
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            e is HomeException ? e.message : 'تعذر تحميل تفاصيل الخطة',
-          ),
-        ),
+      ThafizToast.show(
+        context,
+        message: e is HomeException ? e.message : 'تعذر تحميل تفاصيل الخطة',
+        kind: ThafizToastKind.error,
       );
     }
   }
@@ -165,15 +164,17 @@ class _HalaqaPlansPageState extends ConsumerState<HalaqaPlansPage> {
         _plans = _plans.where((p) => p.id != plan.id).toList();
         _expanded.remove(plan.id);
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تم حذف الخطة')),
+      ThafizToast.show(
+        context,
+        message: 'تم حذف الخطة',
+        kind: ThafizToastKind.success,
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e is HomeException ? e.message : 'تعذر حذف الخطة'),
-        ),
+      ThafizToast.show(
+        context,
+        message: e is HomeException ? e.message : 'تعذر حذف الخطة',
+        kind: ThafizToastKind.error,
       );
     }
   }
@@ -191,8 +192,10 @@ class _HalaqaPlansPageState extends ConsumerState<HalaqaPlansPage> {
     if (!ok || !mounted) return;
     final sid = int.tryParse(student.id);
     if (sid == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('معرّف الطالب غير صالح')),
+      ThafizToast.show(
+        context,
+        message: 'معرّف الطالب غير صالح',
+        kind: ThafizToastKind.error,
       );
       return;
     }
@@ -218,10 +221,10 @@ class _HalaqaPlansPageState extends ConsumerState<HalaqaPlansPage> {
       });
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e is HomeException ? e.message : 'تعذر إزالة الطالب'),
-        ),
+      ThafizToast.show(
+        context,
+        message: e is HomeException ? e.message : 'تعذر إزالة الطالب',
+        kind: ThafizToastKind.error,
       );
     }
   }

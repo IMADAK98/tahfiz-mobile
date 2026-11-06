@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/util/school_calendar.dart';
+import '../../../shared/widgets/thafiz_toast.dart';
 import '../../halaqa/data/attendance_status.dart';
 import '../../halaqa/data/dto/halaqa_student.dart';
 import '../../home/data/dto/progress_models.dart';
@@ -429,8 +430,10 @@ class _StudentProgressPageState extends ConsumerState<StudentProgressPage> {
         );
       }
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تم حفظ التقدّم')),
+      ThafizToast.show(
+        context,
+        message: 'تم حفظ التقدّم',
+        kind: ThafizToastKind.success,
       );
       await _refreshRosterPercents();
       await _loadProgressFor(type);
@@ -556,12 +559,10 @@ class _StudentProgressPageState extends ConsumerState<StudentProgressPage> {
                                   _studentName ?? 'الطالب #${widget.studentId}',
                               attendanceStatus: _attendanceStatus,
                               onAssignStub: () {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'ربط الخطة يتم من إدارة الحلقة (قريباً)',
-                                    ),
-                                  ),
+                                ThafizToast.show(
+                                  context,
+                                  message: 'ربط الخطة يتم من إدارة الحلقة (قريباً)',
+                                  kind: ThafizToastKind.info,
                                 );
                               },
                               onBackToHalaqa: () {
