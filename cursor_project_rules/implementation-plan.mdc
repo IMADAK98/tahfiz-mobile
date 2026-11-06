@@ -60,6 +60,12 @@ Pending
 
 Replace fake name/email with `GET /teacher-profile` (JWT teacher). Logout stays.
 
+## Imad — attendance roster cards are display-only
+
+Done
+
+Removed the roster chevron and the `/student/:id` hub page. «تعديل الحضور» and `/student/:id/progress` stay.
+
 ## Cancelled (do not resume unless Imad asks)
 
 Multi-state attendance toggle POC — pack cancelled it.
