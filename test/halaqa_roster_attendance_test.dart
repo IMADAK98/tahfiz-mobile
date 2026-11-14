@@ -105,7 +105,7 @@ void main() {
     await tester.pump();
   }
 
-  testWidgets('unmarked roster shows لم يُعلَّم and tapping the name does not save',
+  testWidgets('unmarked roster shows لم يُسجَّل and tapping the name does not save',
       (tester) async {
     final repo = _FakeHomeRepo([
       const HalaqaStudent(
@@ -116,7 +116,7 @@ void main() {
     ]);
     await pumpRoster(tester, repo);
 
-    expect(find.text('لم يُعلَّم'), findsOneWidget);
+    expect(find.text('لم يُسجَّل'), findsOneWidget);
     expect(find.text('حاضر'), findsNothing);
 
     await tester.tap(find.text('أحمد'));

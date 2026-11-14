@@ -74,7 +74,7 @@ String dailyProgressBlockedMessage(String? raw) {
   };
 }
 
-const unmarkedAttendanceLabel = 'لم يُعلَّم';
+const unmarkedAttendanceLabel = 'لم يُسجَّل';
 
 String attendanceLabelAr(NestAttendanceStatus? status) =>
     status?.labelAr ?? unmarkedAttendanceLabel;

@@ -232,7 +232,7 @@ void main() {
     await pumpPage(tester, repo);
 
     expect(find.text('سجّل الحضور أولاً قبل تسجيل التقدّم'), findsOneWidget);
-    expect(find.text('لم يُعلَّم'), findsOneWidget);
+    expect(find.text('لم يُسجَّل'), findsOneWidget);
     expect(find.text('تعيين / ربط خطة دراسية'), findsNothing);
     expect(find.text('حفظ التقدّم'), findsNothing);
     expect(find.text('نطاق الخطة (للقراءة)'), findsNothing);

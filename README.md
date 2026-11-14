@@ -35,7 +35,7 @@ Package: `thafiz_teacher` · Android id: `com.thafiz.thafiz_teacher` · API: `ht
 - MURAJAA: add/remove list
 - **No** وحدة / اتجاه fields
 - Attendance: Nest `LEAVE` → معذور only (no إجازة chip)
-- Attendance roster cards show name and status only (unmarked stays لم يُعلَّم). No chevron and no tap-through. Marking is «تعديل الحضور» → chips حاضر/غائب/متأخر/معذور → «حفظ الحضور». `/student/:id` (student hub) is not registered. `/student/:id/progress` still opens from the التقدم tab.
+- Attendance roster cards show name and status only (unmarked stays لم يُسجَّل). No chevron and no tap-through. Marking is «تعديل الحضور» → chips حاضر/غائب/متأخر/معذور → «حفظ الحضور». `/student/:id` (student hub) is not registered. `/student/:id/progress` still opens from the التقدم tab.
 
 ## Brand
 
