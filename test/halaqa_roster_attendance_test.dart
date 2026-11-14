@@ -5,9 +5,11 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:thafiz_teacher/core/storage/secure_storage_service.dart';
+import 'package:thafiz_teacher/features/halaqa/data/attendance_status.dart';
 import 'package:thafiz_teacher/features/halaqa/data/dto/halaqa_student.dart';
 import 'package:thafiz_teacher/features/halaqa/data/dto/halaqa_study_plan.dart';
 import 'package:thafiz_teacher/features/halaqa/presentation/halaqa_detail_page.dart';
+import 'package:thafiz_teacher/features/home/data/dto/progress_models.dart';
 import 'package:thafiz_teacher/features/home/data/home_api.dart';
 import 'package:thafiz_teacher/features/home/data/home_repository.dart';
 import 'package:thafiz_teacher/shared/widgets/thafiz_toast.dart';
@@ -32,6 +34,7 @@ class _FakeHomeRepo extends HomeRepository {
         );
 
   List<HalaqaStudent> students;
+  List<HalaqaStudyPlan> plans = const [];
   final saves = <_SaveCall>[];
   Object? saveError;
 
@@ -50,7 +53,7 @@ class _FakeHomeRepo extends HomeRepository {
 
   @override
   Future<List<HalaqaStudyPlan>> listHalaqaStudyPlans(String halaqaId) async =>
-      const [];
+      plans;
 
   @override
   Future<void> saveStudentAttendance({
@@ -407,5 +410,137 @@ void main() {
     final toast = tester.getRect(find.byType(ThafizToastCard));
     final save = tester.getRect(find.widgetWithText(FilledButton, 'تعديل الحضور'));
     expect(toast.bottom, lessThanOrEqualTo(save.top));
+  });
+
+  group('UnmarkedAttendanceConfirmCopy.body plural forms', () {
+    const cases = {
+      1: 'طالب واحد لم يُسجَّل حضوره بعد. هل تريد الحفظ الآن؟',
+      2: 'طالبان لم يُسجَّل حضورهما بعد. هل تريد الحفظ الآن؟',
+      3: '3 طلاب لم يُسجَّل حضورهم بعد. هل تريد الحفظ الآن؟',
+      10: '10 طلاب لم يُسجَّل حضورهم بعد. هل تريد الحفظ الآن؟',
+      11: '11 طالبًا لم يُسجَّل حضورهم بعد. هل تريد الحفظ الآن؟',
+      99: '99 طالبًا لم يُسجَّل حضورهم بعد. هل تريد الحفظ الآن؟',
+      100: '100 طالب لم يُسجَّل حضورهم بعد. هل تريد الحفظ الآن؟',
+      150: '150 طالب لم يُسجَّل حضورهم بعد. هل تريد الحفظ الآن؟',
+    };
+    for (final MapEntry(key: n, value: expected) in cases.entries) {
+      test('n = $n', () {
+        expect(UnmarkedAttendanceConfirmCopy.body(n), expected);
+      });
+    }
+
+    test('title and buttons', () {
+      expect(UnmarkedAttendanceConfirmCopy.title, 'بعض الطلاب لم يُسجَّل حضورهم');
+      expect(UnmarkedAttendanceConfirmCopy.confirm, 'حفظ الآن');
+      expect(UnmarkedAttendanceConfirmCopy.cancel, 'العودة للتسجيل');
+    });
+  });
+
+  testWidgets('unmarked students > 0: confirm shows; cancel keeps editing, حفظ الآن saves',
+      (tester) async {
+    final repo = _FakeHomeRepo([
+      const HalaqaStudent(id: '15', name: 'أحمد', attendanceStatus: 'NOT_MARKED'),
+      const HalaqaStudent(id: '16', name: 'خالد', attendanceStatus: 'NOT_MARKED'),
+    ]);
+    await pumpRoster(tester, repo);
+
+    await tester.tap(find.text('تعديل الحضور'));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('att-chip-15-ABSENT')));
+    await tester.pump();
+    await tester.tap(find.text('حفظ الحضور'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('بعض الطلاب لم يُسجَّل حضورهم'), findsOneWidget);
+    expect(
+      find.text('طالب واحد لم يُسجَّل حضوره بعد. هل تريد الحفظ الآن؟'),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('العودة للتسجيل'));
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(repo.saves, isEmpty);
+    expect(find.text('حفظ الحضور'), findsOneWidget);
+
+    await tester.tap(find.text('حفظ الحضور'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('حفظ الآن'));
+    await tester.pump();
+    await tester.pump();
+
+    expect(repo.saves.single.status, 'ABSENT');
+    expect(find.text('تم تحديث الحضور'), findsOneWidget);
+  });
+
+  testWidgets('no unmarked students (n = 0): saves without a confirm',
+      (tester) async {
+    final repo = _FakeHomeRepo([
+      const HalaqaStudent(id: '15', name: 'أحمد', attendanceStatus: 'PRESENT'),
+    ]);
+    await pumpRoster(tester, repo);
+
+    await tester.tap(find.text('تعديل الحضور'));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('att-chip-15-LATE')));
+    await tester.pump();
+    await tester.tap(find.text('حفظ الحضور'));
+    await tester.pump();
+
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(find.text('بعض الطلاب لم يُسجَّل حضورهم'), findsNothing);
+    await tester.pump();
+    expect(repo.saves.single.status, 'LATE');
+  });
+
+  testWidgets('progress pills: real %, 0 on an absent day, hide null and unplanned',
+      (tester) async {
+    final repo = _FakeHomeRepo([
+      const HalaqaStudent(
+        id: '15',
+        name: 'أحمد',
+        attendanceStatus: 'PRESENT',
+        hifzPercent: 115,
+        murajaaPercent: 0,
+        tathbeetPercent: null,
+      ),
+      const HalaqaStudent(
+        id: '16',
+        name: 'خالد',
+        attendanceStatus: 'ABSENT',
+        hifzPercent: 0,
+        murajaaPercent: 200,
+        tathbeetPercent: 0,
+      ),
+    ])
+      ..plans = const [
+        HalaqaStudyPlan(
+          id: 1,
+          name: 'خطة حفظ',
+          items: [StudyPlanItemRef(id: 11, type: PlanItemType.hifz)],
+          students: [PlanAssignedStudent(id: '15', name: 'أحمد')],
+          detailsLoaded: true,
+        ),
+        HalaqaStudyPlan(
+          id: 2,
+          name: 'خطة كاملة',
+          items: [
+            StudyPlanItemRef(id: 21, type: PlanItemType.hifz),
+            StudyPlanItemRef(id: 22, type: PlanItemType.murajaa),
+          ],
+          students: [PlanAssignedStudent(id: '16', name: 'خالد')],
+          detailsLoaded: true,
+        ),
+      ];
+    await pumpRoster(tester, repo);
+    await tester.tap(find.byKey(const Key('halaqa-tab-progress')));
+    await tester.pump();
+
+    expect(find.text('115%'), findsOneWidget);
+    expect(find.text('200%'), findsOneWidget);
+    expect(find.text('0%'), findsOneWidget);
+    expect(find.text('حفظ'), findsNWidgets(2));
+    expect(find.text('مراجعة'), findsOneWidget);
+    expect(find.text('تثبيت'), findsNothing);
   });
 }

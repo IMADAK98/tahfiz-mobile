@@ -4,9 +4,9 @@ class HalaqaStudent {
     required this.id,
     required this.name,
     this.attendanceStatus,
-    this.hifzPercent = 0,
-    this.tathbeetPercent = 0,
-    this.murajaaPercent = 0,
+    this.hifzPercent,
+    this.tathbeetPercent,
+    this.murajaaPercent,
   });
 
   final String id;
@@ -15,28 +15,15 @@ class HalaqaStudent {
   /// Raw Nest attendance enum: PRESENT / ABSENT / LATE / LEAVE / NOT_MARKED / …
   final String? attendanceStatus;
 
-  final double hifzPercent;
-  final double tathbeetPercent;
-  final double murajaaPercent;
+  /// That term-day's stored %, uncapped (may exceed 100). Null = no value
+  /// (Nest returns null for a type outside the student's plan).
+  final double? hifzPercent;
+  final double? tathbeetPercent;
+  final double? murajaaPercent;
 
   bool get isPresent {
     final s = attendanceStatus?.toUpperCase().trim();
     return s == 'PRESENT';
-  }
-
-  HalaqaStudent copyWith({
-    double? hifzPercent,
-    double? tathbeetPercent,
-    double? murajaaPercent,
-  }) {
-    return HalaqaStudent(
-      id: id,
-      name: name,
-      attendanceStatus: attendanceStatus,
-      hifzPercent: hifzPercent ?? this.hifzPercent,
-      tathbeetPercent: tathbeetPercent ?? this.tathbeetPercent,
-      murajaaPercent: murajaaPercent ?? this.murajaaPercent,
-    );
   }
 
   factory HalaqaStudent.fromJson(Map<String, dynamic> json) {
@@ -126,8 +113,10 @@ class HalaqaStudent {
     return null;
   }
 
-  /// Returns (hifz, tathbeet, murajaa) percentages in 0–100.
-  static (double, double, double) _extractPercents(Map<String, dynamic> json) {
+  /// Returns (hifz, tathbeet, murajaa) percentages as sent (no cap).
+  static (double?, double?, double?) _extractPercents(
+    Map<String, dynamic> json,
+  ) {
     var hifz = _asPercent(
       json['hifz_percentage'] ??
           json['hifzPercentage'] ??
@@ -200,21 +189,10 @@ class HalaqaStudent {
     return (hifz, tathbeet, murajaa);
   }
 
-  static double _asPercent(dynamic v) {
-    if (v == null) return 0;
-    if (v is num) {
-      final n = v.toDouble();
-      if (n > 0 && n <= 1) return (n * 100).clamp(0, 100);
-      return n.clamp(0, 100);
-    }
-    if (v is String) {
-      final cleaned = v.replaceAll('%', '').trim();
-      final n = double.tryParse(cleaned);
-      if (n == null) return 0;
-      if (n > 0 && n <= 1) return (n * 100).clamp(0, 100);
-      return n.clamp(0, 100);
-    }
-    return 0;
+  static double? _asPercent(dynamic v) {
+    if (v is num) return v.toDouble();
+    if (v is String) return double.tryParse(v.replaceAll('%', '').trim());
+    return null;
   }
 
   static Map<String, dynamic>? _asMap(dynamic v) {

@@ -578,21 +578,13 @@ class _StudentCard extends StatelessWidget {
                         spacing: 4,
                         runSpacing: 4,
                         children: [
-                          _MetricPill(
-                            kind: _MetricKind.hifz,
-                            label: 'حفظ',
-                            percent: student.hifzPercent,
-                          ),
-                          _MetricPill(
-                            kind: _MetricKind.murajaa,
-                            label: 'مراجعة',
-                            percent: student.murajaaPercent,
-                          ),
-                          _MetricPill(
-                            kind: _MetricKind.tathbeet,
-                            label: 'تثبيت',
-                            percent: student.tathbeetPercent,
-                          ),
+                          for (final (kind, label, percent) in [
+                            (_MetricKind.hifz, 'حفظ', student.hifzPercent),
+                            (_MetricKind.murajaa, 'مراجعة', student.murajaaPercent),
+                            (_MetricKind.tathbeet, 'تثبيت', student.tathbeetPercent),
+                          ])
+                            if (percent != null)
+                              _MetricPill(kind: kind, label: label, percent: percent),
                         ],
                       ),
                     ],
@@ -723,7 +715,7 @@ class _MetricPill extends StatelessWidget {
                 _MetricKind.tathbeet => AppColors.tathbeetPercentHigh,
                 _MetricKind.murajaa => AppColors.murajaaPercentHigh,
               });
-    final shown = percent.round().clamp(0, 100);
+    final shown = percent.round();
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
