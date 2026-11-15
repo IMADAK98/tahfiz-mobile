@@ -26,7 +26,7 @@ Locked `student-progress.html` copies the old combined student card: 4 attendanc
 |---|---|
 | 4 read-only attendance chips | One **حاضر** badge next to the name (committed status). Edit attendance on ḥalaqa tab الحضور |
 | Type pills can fill solid and hide the label | Equal segmented tabs; **label always visible**; active = type-soft fill + type border |
-| No term % on the editor | Quiet chips حفظ / مراجعة / تثبيت = **term-to-date** (`GET /reports/progress` dates, not that day’s `*_percentage`) |
+| No term % on the editor | Quiet chips حفظ / مراجعة / تثبيت = **that day’s stored %** (roster `*_percentage`), uncapped (e.g. 115, 200). Hidden when the type is not in the plan or the value is null. (Imad, replaces the earlier term-to-date overlay.) |
 | «الطلاب» leftover label | Date pill above the card (same language as ḥalaqa v2) |
 | No today hint | «لم يُسجَّل اليوم» / «تم اليوم» under the type tabs |
 
@@ -43,7 +43,7 @@ Locked `student-progress.html` copies the old combined student card: 4 attendanc
 
 1. Topbar: back · ḥalaqa name (sample «نموذج عماد»)
 2. Date pill `2026-09-20` · caption «يوم التسجيل · أحد–خميس»
-3. Card: name + حاضر badge · term % chips · type tabs · today hint · plan · fill · dock CTA
+3. Card: name + حاضر badge · daily % chips · type tabs · today hint · plan · fill · dock CTA
 
 ### Type tabs (RTL visual)
 

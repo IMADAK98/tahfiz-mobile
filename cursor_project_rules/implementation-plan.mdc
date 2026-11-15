@@ -19,7 +19,7 @@ Agents must read `cursor_project_rules/README.md` before writing Flutter.
 Done
 
 Implemented tabs الحضور · التقدم · نظرة عامة on `HalaqaDetailPage` (`/halaqa/:id`).
-Unmarked roster is `لم يُعلَّم`, not حاضر. Teacher must pick a chip before save.
+Unmarked roster is `لم يُسجَّل`, not حاضر. Teacher must pick a chip before save.
 
 ## Step 2c — Teacher ḥalaqa plans management (الخطط)
 
@@ -72,6 +72,13 @@ Done
 
 `ThafizToast` replaces Material snackbars for teacher transient feedback. Direction B was not built.
 Success and attendance info show only after the save API returns. Inline Nest errors stay.
+
+## Imad — daily % chips, مراجعة end, unmarked confirm
+
+Done
+
+Chips show that day's roster % uncapped, hidden for unplanned/null types; the `/reports/progress` overlay is gone. مراجعة end stays empty when the suggestion has no end.
+Saving attendance with unmarked students asks for confirmation (Thafiz Arabic copy). Unmarked label renamed to «لم يُسجَّل».
 
 ## Cancelled (do not resume unless Imad asks)
 

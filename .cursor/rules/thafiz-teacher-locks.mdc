@@ -15,7 +15,7 @@ alwaysApply: true
 
 **Student progress v2** is **requested**: implement on the existing `/student/:id/progress` route (ḥalaqa «تسجيل تقدّم»). v1 `student-progress.html` stays locked.
 
-**Attendance:** chips حاضر / غائب / متأخر / معذور only. Nest `LEAVE` → معذور. Soft light-green حاضر. Skip Fri/Sat + `holidayDates`. Bulk `POST`/`PUT` `/attendance/bulk` `{ termDayId, students: [{ userId, status }] }`. Term id = `GetHalqaDto.assignedToTermId`. Roster id = `userId` / `user.id`. Unmarked (`NOT_MARKED`/null) stays unmarked (`لم يُعلَّم`) — do not default to حاضر. Empty aggregated ≠ no students.
+**Attendance:** chips حاضر / غائب / متأخر / معذور only. Nest `LEAVE` → معذور. Soft light-green حاضر. Skip Fri/Sat + `holidayDates`. Bulk `POST`/`PUT` `/attendance/bulk` `{ termDayId, students: [{ userId, status }] }`. Term id = `GetHalqaDto.assignedToTermId`. Roster id = `userId` / `user.id`. Unmarked (`NOT_MARKED`/null) stays unmarked (`لم يُسجَّل`) — do not default to حاضر. Empty aggregated ≠ no students.
 
 **Progress:** plan block read-only. Teacher fills إلى سورة + إلى آية only. HIFZ/TATHBEET one pair each. MURAJAA = list. No وحدة/اتجاه. Unbound plan = empty state + CTA «تعيين / ربط خطة دراسية», never a blank screen. Daily write only when Nest attendance is PRESENT or LATE; unmarked / ABSENT / LEAVE / HOLIDAY → 409 (`ATTENDANCE_REQUIRED` / `ATTENDANCE_BLOCKS_PROGRESS`), blocked UI (not the unbound CTA).
 

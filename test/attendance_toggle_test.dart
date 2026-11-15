@@ -100,7 +100,7 @@ void main() {
       expect(s.attendanceStatus, 'NOT_MARKED');
       expect(s.isPresent, isFalse);
       expect(parseNestAttendanceStatus(s.attendanceStatus), isNull);
-      expect(attendanceLabelAr(null), 'لم يُعلَّم');
+      expect(attendanceLabelAr(null), 'لم يُسجَّل');
     });
   });
 }

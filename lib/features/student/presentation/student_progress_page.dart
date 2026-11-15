@@ -45,9 +45,9 @@ class _StudentProgressPageState extends ConsumerState<StudentProgressPage> {
   String _title = 'المعلم';
   String? _studentName;
   String? _attendanceStatus;
-  double _hifzPercent = 0;
-  double _tathbeetPercent = 0;
-  double _murajaaPercent = 0;
+  double? _hifzPercent;
+  double? _tathbeetPercent;
+  double? _murajaaPercent;
 
   List<StudyPlanItemRef> _items = const [];
   List<QuranSurah> _surahs = const [];
@@ -141,9 +141,9 @@ class _StudentProgressPageState extends ConsumerState<StudentProgressPage> {
 
       String? name;
       String? att;
-      var hifz = 0.0;
-      var tathbeet = 0.0;
-      var murajaa = 0.0;
+      double? hifz;
+      double? tathbeet;
+      double? murajaa;
       if (_hasHalaqa && results.length >= 3) {
         final students = results[2] as List<HalaqaStudent>;
         for (final s in students) {
@@ -290,10 +290,11 @@ class _StudentProgressPageState extends ConsumerState<StudentProgressPage> {
   ) {
     _progress = snap;
 
-    final endSurah = snap.preferredEndSurah ?? plan.toSurah ?? plan.fromSurah;
-    final endAyah = snap.preferredEndAyah ?? plan.toAyah ?? plan.fromAyah;
-
     if (type == PlanItemType.murajaa) {
+      // The plan's end is never a valid مراجعة end: after day 1 the server
+      // suggests a start only, and the teacher types the end.
+      final endSurah = snap.preferredEndSurah;
+      final endAyah = snap.preferredEndAyah;
       for (final r in _murRows) {
         r.dispose();
       }
@@ -303,9 +304,9 @@ class _StudentProgressPageState extends ConsumerState<StudentProgressPage> {
         for (final r in snap.murajaaRanges) {
           _murRows.add(
             _MurRow(
-              endSurah: r.endSurah ?? endSurah ?? 1,
+              endSurah: r.endSurah ?? endSurah,
               endAyah: TextEditingController(
-                text: '${r.endAyah ?? endAyah ?? 1}',
+                text: '${r.endAyah ?? endAyah ?? ''}',
               ),
               startSurah: r.startSurah ??
                   snap.preferredStartSurah ??
@@ -319,16 +320,17 @@ class _StudentProgressPageState extends ConsumerState<StudentProgressPage> {
       } else {
         _murRows.add(
           _MurRow(
-            endSurah: endSurah ?? 1,
-            endAyah: TextEditingController(text: '${endAyah ?? 1}'),
+            endSurah: endSurah,
+            endAyah: TextEditingController(text: '${endAyah ?? ''}'),
             startSurah: snap.preferredStartSurah ?? plan.fromSurah,
             startAyah: snap.preferredStartAyah ?? plan.fromAyah,
           ),
         );
       }
     } else {
-      _endSurah = endSurah;
-      _endAyahCtrl.text = '${endAyah ?? 1}';
+      _endSurah = snap.preferredEndSurah ?? plan.toSurah ?? plan.fromSurah;
+      _endAyahCtrl.text =
+          '${snap.preferredEndAyah ?? plan.toAyah ?? plan.fromAyah ?? 1}';
     }
     setState(() {});
   }
@@ -1033,9 +1035,9 @@ class _StudentCard extends StatelessWidget {
 
   final String name;
   final String? attendanceStatus;
-  final double hifzPercent;
-  final double tathbeetPercent;
-  final double murajaaPercent;
+  final double? hifzPercent;
+  final double? tathbeetPercent;
+  final double? murajaaPercent;
   final bool recordedToday;
   final List<StudyPlanItemRef> items;
   final PlanItemType? selected;
@@ -1096,12 +1098,13 @@ class _StudentCard extends StatelessWidget {
             spacing: 4,
             runSpacing: 4,
             children: [
-              _MetricChip(kind: PlanItemType.hifz, percent: hifzPercent),
-              _MetricChip(kind: PlanItemType.murajaa, percent: murajaaPercent),
-              _MetricChip(
-                kind: PlanItemType.tathbeet,
-                percent: tathbeetPercent,
-              ),
+              for (final (kind, percent) in [
+                (PlanItemType.hifz, hifzPercent),
+                (PlanItemType.murajaa, murajaaPercent),
+                (PlanItemType.tathbeet, tathbeetPercent),
+              ])
+                if (percent != null && types.contains(kind))
+                  _MetricChip(kind: kind, percent: percent),
             ],
           ),
           if (types.isNotEmpty) ...[
@@ -1273,7 +1276,7 @@ class _MetricChip extends StatelessWidget {
           const Color(0xFFD4AF37).withValues(alpha: 0.45),
         ),
     };
-    final shown = percent.round().clamp(0, 100);
+    final shown = percent.round();
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
@@ -1557,10 +1560,8 @@ class _SurahField extends StatelessWidget {
           child: DropdownButtonHideUnderline(
             child: DropdownButton<int>(
               isExpanded: true,
-              value: value != null &&
-                      items.any((s) => s.number == value)
-                  ? value
-                  : (items.isNotEmpty ? items.first.number : null),
+              value: items.any((s) => s.number == value) ? value : null,
+              hint: const Text('—', style: TextStyle(fontSize: 13)),
               items: [
                 for (final s in items)
                   DropdownMenuItem(

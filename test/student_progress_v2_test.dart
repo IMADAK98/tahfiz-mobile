@@ -17,6 +17,7 @@ class _FakeProgressRepo extends HomeRepository {
     required this.items,
     this.saved = false,
     this.saveError,
+    this.snapshot,
   }) : super(
           api: HomeApi(Dio()),
           storage: SecureStorageService(const FlutterSecureStorage()),
@@ -26,6 +27,7 @@ class _FakeProgressRepo extends HomeRepository {
   List<StudyPlanItemRef> items;
   bool saved;
   Object? saveError;
+  DailyProgressSnapshot? snapshot;
   var saveCalls = 0;
   var progressLoads = 0;
 
@@ -67,6 +69,7 @@ class _FakeProgressRepo extends HomeRepository {
     required int studyPlanItemId,
   }) async {
     progressLoads++;
+    if (snapshot != null) return snapshot!;
     return DailyProgressSnapshot(
       id: saved ? 9 : null,
       isProgress: saved,
@@ -172,7 +175,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 50));
   }
 
-  testWidgets('v2 chrome: date pill, one حاضر badge, term %, type tabs',
+  testWidgets('v2 chrome: date pill, one حاضر badge, daily %, type tabs',
       (tester) async {
     await pumpPage(
       tester,
@@ -187,8 +190,9 @@ void main() {
     expect(find.text('غائب'), findsNothing);
     expect(find.text('الطلاب'), findsNothing);
     expect(find.text('حفظ 59%'), findsOneWidget);
-    expect(find.text('مراجعة 100%'), findsOneWidget);
-    expect(find.text('تثبيت 100%'), findsOneWidget);
+    // Plan has HIFZ only: unplanned مراجعة / تثبيت chips stay hidden.
+    expect(find.textContaining('مراجعة '), findsNothing);
+    expect(find.textContaining('تثبيت '), findsNothing);
     expect(find.text('حفظ'), findsWidgets);
     expect(find.text('لم يُسجَّل اليوم'), findsOneWidget);
     expect(find.text('نطاق الخطة (للقراءة)'), findsOneWidget);
@@ -228,7 +232,7 @@ void main() {
     await pumpPage(tester, repo);
 
     expect(find.text('سجّل الحضور أولاً قبل تسجيل التقدّم'), findsOneWidget);
-    expect(find.text('لم يُعلَّم'), findsOneWidget);
+    expect(find.text('لم يُسجَّل'), findsOneWidget);
     expect(find.text('تعيين / ربط خطة دراسية'), findsNothing);
     expect(find.text('حفظ التقدّم'), findsNothing);
     expect(find.text('نطاق الخطة (للقراءة)'), findsNothing);
@@ -300,5 +304,90 @@ void main() {
     expect(find.byType(ThafizToastCard), findsNothing);
     expect(find.text('سجّل الحضور أولاً قبل تسجيل التقدّم'), findsOneWidget);
     expect(find.text('تعيين / ربط خطة دراسية'), findsNothing);
+  });
+
+  const murajaaItem = StudyPlanItemRef(
+    id: 25,
+    type: PlanItemType.murajaa,
+    fromSurah: 2,
+    fromAyah: 1,
+    toSurah: 2,
+    toAyah: 16,
+    fromSurahName: 'البقرة',
+    toSurahName: 'البقرة',
+    amountType: 'PAGE',
+    amountValue: 1,
+  );
+  const tathbeetItem = StudyPlanItemRef(
+    id: 24,
+    type: PlanItemType.tathbeet,
+    fromSurah: 1,
+    fromAyah: 1,
+    toSurah: 2,
+    toAyah: 5,
+  );
+
+  testWidgets('مراجعة suggestion without an end leaves the end empty, not the plan end',
+      (tester) async {
+    final repo = _FakeProgressRepo(
+      students: const [student],
+      items: const [murajaaItem],
+      snapshot: const DailyProgressSnapshot(
+        id: 70,
+        suggestedStartSurah: 2,
+        suggestedStartAyah: 17,
+      ),
+    );
+    await pumpPage(tester, repo);
+
+    expect(find.text('ما أنجزه الطالب اليوم — مراجعة'), findsOneWidget);
+    final ayah = tester.widget<TextField>(find.byType(TextField).first);
+    expect(ayah.controller!.text, isEmpty);
+    expect(find.text('16'), findsNothing);
+    final surah = tester.widget<DropdownButton<int>>(
+      find.byType(DropdownButton<int>).first,
+    );
+    expect(surah.value, isNull);
+  });
+
+  testWidgets('chips show the real uncapped % and hide null types',
+      (tester) async {
+    const over = HalaqaStudent(
+      id: '30',
+      name: 'TEST Student PriorTerm',
+      attendanceStatus: 'PRESENT',
+      hifzPercent: 115,
+      murajaaPercent: 200,
+      tathbeetPercent: null,
+    );
+    await pumpPage(
+      tester,
+      _FakeProgressRepo(
+        students: const [over],
+        items: const [hifzItem, murajaaItem, tathbeetItem],
+      ),
+    );
+    expect(find.text('حفظ 115%'), findsOneWidget);
+    expect(find.text('مراجعة 200%'), findsOneWidget);
+    expect(find.textContaining('تثبيت '), findsNothing);
+  });
+
+  testWidgets('unplanned types hide even when the roster sends 0',
+      (tester) async {
+    const unplannedZero = HalaqaStudent(
+      id: '30',
+      name: 'TEST Student PriorTerm',
+      attendanceStatus: 'PRESENT',
+      hifzPercent: 0,
+      murajaaPercent: 0,
+      tathbeetPercent: 0,
+    );
+    await pumpPage(
+      tester,
+      _FakeProgressRepo(students: const [unplannedZero], items: const [hifzItem]),
+    );
+    expect(find.text('حفظ 0%'), findsOneWidget);
+    expect(find.textContaining('مراجعة '), findsNothing);
+    expect(find.textContaining('تثبيت '), findsNothing);
   });
 }

@@ -74,7 +74,23 @@ String dailyProgressBlockedMessage(String? raw) {
   };
 }
 
-const unmarkedAttendanceLabel = 'لم يُعلَّم';
+const unmarkedAttendanceLabel = 'لم يُسجَّل';
 
 String attendanceLabelAr(NestAttendanceStatus? status) =>
     status?.labelAr ?? unmarkedAttendanceLabel;
+
+/// Confirm before saving attendance while students are still unmarked
+/// (copy from Thafiz Arabic). Only shown when [body]'s n ≥ 1.
+abstract final class UnmarkedAttendanceConfirmCopy {
+  static const title = 'بعض الطلاب لم يُسجَّل حضورهم';
+  static const confirm = 'حفظ الآن';
+  static const cancel = 'العودة للتسجيل';
+
+  static String body(int n) {
+    if (n == 1) return 'طالب واحد لم يُسجَّل حضوره بعد. هل تريد الحفظ الآن؟';
+    if (n == 2) return 'طالبان لم يُسجَّل حضورهما بعد. هل تريد الحفظ الآن؟';
+    if (n <= 10) return '$n طلاب لم يُسجَّل حضورهم بعد. هل تريد الحفظ الآن؟';
+    if (n <= 99) return '$n طالبًا لم يُسجَّل حضورهم بعد. هل تريد الحفظ الآن؟';
+    return '$n طالب لم يُسجَّل حضورهم بعد. هل تريد الحفظ الآن؟';
+  }
+}

@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/util/school_calendar.dart';
 import '../../../shared/widgets/thafiz_toast.dart';
+import '../../home/data/dto/progress_models.dart';
 import '../../home/data/home_repository.dart';
 import '../data/attendance_status.dart';
 import '../data/dto/halaqa_student.dart';
@@ -39,6 +40,10 @@ class _HalaqaDetailPageState extends ConsumerState<HalaqaDetailPage> {
   _DetailTab _tab = _DetailTab.attendance;
   NestAttendanceStatus? _filter;
   int _plansCount = 0;
+
+  /// Plan item types keyed by student User.id. Null = plans not loaded, so
+  /// progress pills hide on null values only.
+  Map<String, Set<PlanItemType>>? _planTypesByStudent;
 
   /// Optimistic chip status keyed by Nest User.id.
   final Map<String, NestAttendanceStatus> _uiStatus = {};
@@ -102,6 +107,43 @@ class _HalaqaDetailPageState extends ConsumerState<HalaqaDetailPage> {
     return _students.where((s) => _statusFor(s) == _filter).toList();
   }
 
+  void _applyPlans(List<HalaqaStudyPlan>? plans) {
+    _plansCount = plans?.length ?? 0;
+    if (plans == null || plans.any((p) => !p.detailsLoaded)) {
+      _planTypesByStudent = null;
+      return;
+    }
+    _planTypesByStudent = {
+      for (final p in plans)
+        for (final s in p.students) s.id: p.typeSummary,
+    };
+  }
+
+  Future<bool> _confirmUnmarked(int count) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text(UnmarkedAttendanceConfirmCopy.title),
+          content: Text(UnmarkedAttendanceConfirmCopy.body(count)),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text(UnmarkedAttendanceConfirmCopy.cancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: FilledButton.styleFrom(backgroundColor: AppColors.brand),
+              child: const Text(UnmarkedAttendanceConfirmCopy.confirm),
+            ),
+          ],
+        ),
+      ),
+    );
+    return confirmed ?? false;
+  }
+
   void _enterEdit() {
     setState(() {
       _editing = true;
@@ -141,6 +183,10 @@ class _HalaqaDetailPageState extends ConsumerState<HalaqaDetailPage> {
       }
       return true;
     }
+
+    final unmarked = _students.where((s) => _statusFor(s) == null).length;
+    if (unmarked > 0 && !await _confirmUnmarked(unmarked)) return false;
+    if (!mounted) return false;
 
     setState(() => _saving = true);
     final repo = ref.read(homeRepositoryProvider);
@@ -225,18 +271,19 @@ class _HalaqaDetailPageState extends ConsumerState<HalaqaDetailPage> {
       final results = await Future.wait([
         repo.getStudentsByHalqaId(halaqaId: widget.halaqaId, date: _date),
         repo.getHalqaName(widget.halaqaId),
-        // Plans count is best-effort — overview entry still shows if offline.
-        repo.listHalaqaStudyPlans(widget.halaqaId).catchError(
-              (_) => const <HalaqaStudyPlan>[],
+        // Plans are best-effort — overview entry still shows if offline.
+        repo.listHalaqaStudyPlans(widget.halaqaId).then<List<HalaqaStudyPlan>?>(
+              (plans) => plans,
+              onError: (_) => null,
             ),
       ]);
       if (!mounted) return;
       final students = results[0] as List<HalaqaStudent>;
       final name = results[1] as String?;
-      final plans = results[2] as List<HalaqaStudyPlan>;
+      final plans = results[2] as List<HalaqaStudyPlan>?;
       setState(() {
         _syncRoster(students);
-        _plansCount = plans.length;
+        _applyPlans(plans);
         if (name != null && name.isNotEmpty) {
           _title = name;
         }
@@ -517,6 +564,9 @@ class _HalaqaDetailPageState extends ConsumerState<HalaqaDetailPage> {
         final s = _students[i];
         return _ProgressCard(
           student: s,
+          plannedTypes: _planTypesByStudent == null
+              ? null
+              : (_planTypesByStudent![s.id] ?? const {}),
           onRecord: () => _openProgress(s),
         );
       },
@@ -550,7 +600,7 @@ class _HalaqaDetailPageState extends ConsumerState<HalaqaDetailPage> {
                   .listHalaqaStudyPlans(widget.halaqaId)
                   .then((plans) {
                 if (!mounted) return;
-                setState(() => _plansCount = plans.length);
+                setState(() => _applyPlans(plans));
               }).catchError((_) {});
             });
           },
@@ -1128,9 +1178,16 @@ class _AttChip extends StatelessWidget {
 }
 
 class _ProgressCard extends StatelessWidget {
-  const _ProgressCard({required this.student, required this.onRecord});
+  const _ProgressCard({
+    required this.student,
+    required this.plannedTypes,
+    required this.onRecord,
+  });
 
   final HalaqaStudent student;
+
+  /// Null = unknown (plans not loaded); pills then hide on null values only.
+  final Set<PlanItemType>? plannedTypes;
   final VoidCallback onRecord;
 
   @override
@@ -1162,21 +1219,24 @@ class _ProgressCard extends StatelessWidget {
               spacing: 4,
               runSpacing: 4,
               children: [
-                _MetricPill(
-                  kind: _MetricKind.hifz,
-                  label: 'حفظ',
-                  percent: student.hifzPercent,
-                ),
-                _MetricPill(
-                  kind: _MetricKind.murajaa,
-                  label: 'مراجعة',
-                  percent: student.murajaaPercent,
-                ),
-                _MetricPill(
-                  kind: _MetricKind.tathbeet,
-                  label: 'تثبيت',
-                  percent: student.tathbeetPercent,
-                ),
+                for (final (kind, type, label, percent) in [
+                  (_MetricKind.hifz, PlanItemType.hifz, 'حفظ', student.hifzPercent),
+                  (
+                    _MetricKind.murajaa,
+                    PlanItemType.murajaa,
+                    'مراجعة',
+                    student.murajaaPercent,
+                  ),
+                  (
+                    _MetricKind.tathbeet,
+                    PlanItemType.tathbeet,
+                    'تثبيت',
+                    student.tathbeetPercent,
+                  ),
+                ])
+                  if (percent != null &&
+                      (plannedTypes?.contains(type) ?? true))
+                    _MetricPill(kind: kind, label: label, percent: percent),
               ],
             ),
             const SizedBox(height: 8),
@@ -1398,7 +1458,7 @@ class _MetricPill extends StatelessWidget {
     };
 
     final valueColor = _valueColor(kind, percent);
-    final shown = percent.round().clamp(0, 100);
+    final shown = percent.round();
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),

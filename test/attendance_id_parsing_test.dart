@@ -1,9 +1,64 @@
 import 'package:dio/dio.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:thafiz_teacher/core/storage/secure_storage_service.dart';
 import 'package:thafiz_teacher/features/halaqa/data/dto/halaqa_student.dart';
+import 'package:thafiz_teacher/features/home/data/home_api.dart';
 import 'package:thafiz_teacher/features/home/data/home_repository.dart';
 
+class _FakeRosterApi extends HomeApi {
+  _FakeRosterApi(this.rowByDate) : super(Dio());
+
+  final Map<String, Map<String, dynamic>> rowByDate;
+  var reportCalls = 0;
+
+  @override
+  Future<Response<dynamic>> getStudentsByHalqaId(
+    String halaqaId, {
+    required String date,
+  }) async =>
+      Response<dynamic>(
+        requestOptions: RequestOptions(path: '/halqa/students'),
+        data: {
+          'data': [
+            {
+              'user': {'id': 30, 'name': 'طالب'},
+              'term': {'startDate': '2026-09-10'},
+              ...rowByDate[date]!,
+            },
+          ],
+        },
+      );
+
+  @override
+  Future<Response<dynamic>> getProgressReport({
+    required String halaqaId,
+    required String startingDate,
+    required String endingDate,
+  }) async {
+    reportCalls++;
+    return Response<dynamic>(
+      requestOptions: RequestOptions(path: '/reports/progress'),
+      data: {
+        'data': {
+          'students': [
+            {
+              'studentId': 30,
+              'progress': [
+                {'planItemType': 'HIFZ', 'totalPercentage': 77},
+              ],
+            },
+          ],
+        },
+      },
+    );
+  }
+}
+
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  setUpAll(() => FlutterSecureStorage.setMockInitialValues({}));
+
   group('HomeRepository.extractTermId', () {
     test('reads Nest GetHalqaDto assignedToTermId', () {
       expect(
@@ -69,63 +124,53 @@ void main() {
   });
 
   group('HalaqaStudent.fromJson percents', () {
-    test('reads Nest roster snake_case *_percentage', () {
+    test('reads Nest roster snake_case *_percentage uncapped', () {
       final s = HalaqaStudent.fromJson({
         'user': {'id': 30, 'name': 'TEST Student PriorTerm'},
         'attendance': {'status': 'PRESENT'},
         'hifz_status': 'INCOMPLETE',
         'hifz_percentage': 0,
         'tathbeet_status': 'COMPLETE',
-        'tathbeet_percentage': 119,
+        'tathbeet_percentage': 115,
         'murajaa_status': 'COMPLETE',
         'murajaa_percentage': 200,
       });
       expect(s.id, '30');
       expect(s.hifzPercent, 0);
-      expect(s.tathbeetPercent, 100);
-      expect(s.murajaaPercent, 100);
+      expect(s.tathbeetPercent, 115);
+      expect(s.murajaaPercent, 200);
     });
 
-    test('reads reports/progress planItemType + totalPercentage', () {
+    test('null stays null; small values are not treated as fractions', () {
       final s = HalaqaStudent.fromJson({
-        'studentId': 30,
-        'studentName': 'TEST Student PriorTerm',
-        'progress': [
-          {'planItemType': 'HIFZ', 'totalPercentage': 59},
-          {'planItemType': 'TATHBEET', 'totalPercentage': 119},
-          {'planItemType': 'MURAJAA', 'totalPercentage': 200},
-        ],
+        'userId': 31,
+        'hifz_percentage': 0.5,
+        'tathbeet_percentage': null,
+        'murajaa_percentage': '1',
       });
-      expect(s.hifzPercent, 59);
-      expect(s.tathbeetPercent, 100);
-      expect(s.murajaaPercent, 100);
+      expect(s.hifzPercent, 0.5);
+      expect(s.tathbeetPercent, isNull);
+      expect(s.murajaaPercent, 1);
     });
   });
 
-  group('HomeRepository.mergeReportPercents', () {
-    test('overlays term totals onto roster rows by studentId', () {
-      const roster = [
-        HalaqaStudent(id: '30', name: 'TEST Student PriorTerm'),
-      ];
-      final merged = HomeRepository.mergeReportPercents(roster, {
-        'status': 200,
-        'data': {
-          'students': [
-            {
-              'studentId': 30,
-              'studentName': 'TEST Student PriorTerm',
-              'progress': [
-                {'planItemType': 'HIFZ', 'totalPercentage': 59},
-                {'planItemType': 'TATHBEET', 'totalPercentage': 119},
-                {'planItemType': 'MURAJAA', 'totalPercentage': 200},
-              ],
-            },
-          ],
-        },
+  group('HomeRepository.getStudentsByHalqaId daily %', () {
+    test('returns that day roster % and never calls reports/progress', () async {
+      final api = _FakeRosterApi({
+        '2026-09-20': {'hifz_percentage': 59, 'attendance': {'status': 'PRESENT'}},
+        '2026-09-21': {'hifz_percentage': 0, 'attendance': {'status': 'ABSENT'}},
       });
-      expect(merged.single.hifzPercent, 59);
-      expect(merged.single.tathbeetPercent, 100);
-      expect(merged.single.murajaaPercent, 100);
+      final repo = HomeRepository(
+        api: api,
+        storage: SecureStorageService(const FlutterSecureStorage()),
+      );
+
+      final day1 = await repo.getStudentsByHalqaId(halaqaId: '16', date: '2026-09-20');
+      final day2 = await repo.getStudentsByHalqaId(halaqaId: '16', date: '2026-09-21');
+
+      expect(day1.single.hifzPercent, 59);
+      expect(day2.single.hifzPercent, 0);
+      expect(api.reportCalls, 0);
     });
   });
 
